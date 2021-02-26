@@ -12,8 +12,9 @@ def main():
     #m = s.model()
     #print ("f(f(x)) =", m.evaluate(f(f(x))))
     #print ("f(x)    =", m.evaluate(f(x)))
-    h = Hallway(4, 5)
-    h.interpolants()
+    h = Hallway(5, 3)
+    steps = h.interpolants()
+    print(steps)
 
 
 
@@ -120,11 +121,9 @@ class Hallway():
         at_i = self.ats[i]
         unlocked_i = self.unlocked[i]
         unlocked_i_prime = self.unlocked[i+1]
-        unlock_i = self.unlock[i]
         have_key_i = self.have_key[i]
         have_key_i_prime = self.have_key[i+1]
         move = self.move[i]
-        swap_key = self.swap_key[i]
         for j in range(self.length-1):
             fr = j
             to = j + 1
@@ -199,9 +198,9 @@ class Hallway():
             print("unsat")
             A = SolverFor("QF_FD")
             B = SolverFor("QF_FD")
-            A.add(And(init, self.p1))
-            B.add(And(self.pn, self.goal))
-            R = list(pogo(B, A, self.p1_states))[0]
+            A.add(init, self.p1)
+            B.add(self.pn, self.goal)
+            R = list(pogo(B, A, self.p1_states))[-1]
             print(R)
 
     def interpolants(self):
@@ -211,20 +210,26 @@ class Hallway():
             self.solver.push()
             self.solver.add(init)
             res = self.solver.check()
-            self.solver.pop()
+            #self.solver.pop()
             if (res == sat):
                 m = self.solver.model()
+                self.solver.pop()
                 self.print_all_executed_actions(m)
-                print(steps)
-                break
+                return steps + self.depth
             else:
+                self.solver.pop()
                 A = SolverFor("QF_FD")
                 B = SolverFor("QF_FD")
                 A.add(And(init, self.p1))
                 B.add(And(self.pn, self.goal))
-                R = list(pogo(B, A, self.p1_states))[0]
-                init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
-                print(init)
+                R = pogo(B, A, self.p1_states)
+                new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
+                s = Solver()
+                s.add(Not(Implies(new_init, init)))
+                if (s.check() == unsat):
+                    print("fix point, no more")
+                    return -1
+                init = new_init
                 steps +=1
 
 def mk_lit(m, x):
@@ -234,17 +239,19 @@ def mk_lit(m, x):
        return Not(x)
 
 def pogo(A, B, xs):
+    ret = []
     while sat == A.check():
        m = A.model()
        L = [mk_lit(m, x) for x in xs]
        if unsat == B.check(L):
-          notL = Not(And(B.unsat_core()))
-          yield notL
+          core = B.unsat_core()
+          notL = Not(And(core))
+          ret.append(notL)
           A.add(notL)
        else:
-          print("expecting unsat")
+          #print("expecting unsat")
           break
-
+    return (And(ret))
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     main()
