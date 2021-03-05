@@ -1,29 +1,43 @@
 from z3 import *
+import time
 
+interpolant_time = 0
 
 
 def main():
-    #x = Int('x')
-    #y = Int('y')
-    #f = Function('f', IntSort(), IntSort())
-    #s = Solver()
-    #s.add(f(f(x)) == x, f(x) == y, x != y)
-    #print(s.check())
-    #m = s.model()
-    #print ("f(f(x)) =", m.evaluate(f(f(x))))
-    #print ("f(x)    =", m.evaluate(f(x)))
-    h = Hallway(5, 3)
-    steps = h.interpolants()
-    print(steps)
+    start = time.time()
+    steps = 3
+    while True:
+        h = Hallway(7, steps, split=1)
+        new_steps = h.interpolants()
+        print(new_steps)
+        if steps == new_steps:
+            print("valid solution")
+            break
+        else:
+            steps = new_steps
+    end = time.time()
+    print(start-end)
 
-
-
+    steps = 2
+    start = time.time()
+    while True:
+        h = Hallway(7, steps)
+        print(steps)
+        if h.solve():
+            print("valid solution")
+            break
+        else:
+            steps +=1
+    end = time.time()
+    print(start-end)
 
 class Hallway():
-    def __init__(self, n, depth):
-        self.solver = Solver()
+    def __init__(self, n, depth, split=1):
+        self.solver = SolverFor("QF_FD")
         self.depth = depth
         self.length = n
+        self.split = split
         self.ats = [[Bool("at_{}_{}".format(str(i), str(k))) for i in range(n)] for k in range(depth)]
         self.unlocked = [[ Bool("unlocked_{}_{}_{}".format(str(i), str(i+1), str(k))) for i in range(n-1)] + [Bool("unlocked_{}_{}_{}".format(str(i+1), str(i), str(k) )) for i in range(n-1)] for k in range(depth)]
         self.have_key =  [[Bool("have_key_{}_{}".format(str(i), str(k))) for i in range(n)] for k in range(depth)]
@@ -40,10 +54,10 @@ class Hallway():
                     collect_i_j.append(Bool("swap_key_{}_{}_{}".format(str(fr), str(to), str(k) )))
                 collect_i.append(collect_i_j)
             self.swap_key.append(collect_i)
-        goal = self.set_goal()
+        goal = self.ats[-1][-1]
         self.goal = goal
         self.solver.add(goal)
-        p1, pn = self.get_all_frames()
+        p1, pn = self.get_all_frames(self.split)
         self.p1 = p1
         self.p1_states = self.get_all_state_variable(1)
         self.p0_states = self.get_all_state_variable(0)
@@ -103,6 +117,8 @@ class Hallway():
     def set_goal(self):
         return Or([self.ats[i][self.length-1] for i in range(self.depth)])
 
+    def set_goal_i(self, i):
+        return Or([self.ats[j][self.length-1] for j in range(i, self.depth)])
 
     def get_all_act(self, i):
         all_act = self.move[i] + self.unlock[i]
@@ -110,7 +126,7 @@ class Hallway():
             all_act += k_list
         return all_act
 
-    def get_all_frames(self, split=1):
+    def get_all_frames(self, split):
         return And([self.get_frame_constraint(i) for i in range(split)]), And([self.get_frame_constraint(i) for i in range(split, self.depth-1)])
 
 
@@ -191,17 +207,9 @@ class Hallway():
         self.solver.add(init)
         res = self.solver.check()
         if (res == sat):
-            m = self.solver.model()
-            self.print_all_executed_actions(m)
-            self.solver.pop()
+           return True
         else:
-            print("unsat")
-            A = SolverFor("QF_FD")
-            B = SolverFor("QF_FD")
-            A.add(init, self.p1)
-            B.add(self.pn, self.goal)
-            R = list(pogo(B, A, self.p1_states))[-1]
-            print(R)
+           return False
 
     def interpolants(self):
         init = self.set_init()
@@ -209,28 +217,27 @@ class Hallway():
         while True:
             self.solver.push()
             self.solver.add(init)
+            self.solver.add(self.p1)
             res = self.solver.check()
-            #self.solver.pop()
+            self.solver.pop()
             if (res == sat):
-                m = self.solver.model()
-                self.solver.pop()
-                self.print_all_executed_actions(m)
                 return steps + self.depth
             else:
-                self.solver.pop()
                 A = SolverFor("QF_FD")
-                B = SolverFor("QF_FD")
-                A.add(And(init, self.p1))
-                B.add(And(self.pn, self.goal))
-                R = pogo(B, A, self.p1_states)
+                A.add(init, self.p1)
+                self.solver.push()
+                R = pogo(self.solver, A, self.p1_states)
+                self.solver.pop()
                 new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
-                s = Solver()
+                s = Solver()    
                 s.add(Not(Implies(new_init, init)))
                 if (s.check() == unsat):
                     print("fix point, no more")
                     return -1
                 init = new_init
+                #print(init)
                 steps +=1
+                print("progress")
 
 def mk_lit(m, x):
     if is_true(m.eval(x)):
@@ -238,22 +245,50 @@ def mk_lit(m, x):
     else:
        return Not(x)
 
+def minimize_L(B, L):
+    tick = 0
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(L)):
+            tick+=1
+            rst = L[:i] + L[i+1:]
+            if unsat == B.check(rst):
+                L = rst
+                changed = True
+                break
+            if tick >= 100:
+                print("wow")
+                return L
+    return L
+
+
+
 def pogo(A, B, xs):
+    global interpolant_time
+    start = time.time()
     ret = []
+    model_num =0
     while sat == A.check():
        m = A.model()
+       model_num+=1
        L = [mk_lit(m, x) for x in xs]
+       L = minimize_L(B, L)
        if unsat == B.check(L):
           core = B.unsat_core()
-          notL = Not(And(core))
+          notL = Not(simplify(And(core)))
           ret.append(notL)
           A.add(notL)
        else:
-          #print("expecting unsat")
+          print("expecting unsat")
           break
+    spent = time.time() - start
+    interpolant_time += spent
+    print(model_num)
     return (And(ret))
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
     main()
+    print(interpolant_time)
 
 # See PyCharm help at https://www.jetbrains.com/help/pycharm/
