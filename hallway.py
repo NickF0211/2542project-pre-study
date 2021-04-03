@@ -95,13 +95,15 @@ class Hallway():
         self.solver.add(And(p1, pn))
         self.goal = self.obtain_goals(goal, extended_goals)
         self.solver.add(self.goal)
+        self.simply_goal = goal
 
     def obtain_goals(self, original_goal, extended_goals= []):
         goals = [original_goal]
         for e_g in extended_goals:
             e_g = And(e_g)
-            extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(self.depth-1))])
-            goals.append(extended_goals)
+            for j in range(2, self.depth-1):
+                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(self.depth-1))])
+                goals.append(extended_goals)
         return Or(goals)
 
     def print_all_executed_actions(self, model):
