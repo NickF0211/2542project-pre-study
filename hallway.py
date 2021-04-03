@@ -1,14 +1,46 @@
 from z3 import *
 import time
 
+intepolantion_cost = 0
 interpolant_time = 0
+
+
+goal_condition = []
+
+def OneOf(selections):
+    if len(selections) == 0:
+        return False
+    else:
+        head = selections[0]
+        return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), OneOf(selections[1:])))
+
+
+
+def add_if_not_subsumed(Ls, target):
+    i = 0
+    while i < len(Ls):
+        l = Ls[i]
+        #if l subsumes target, then do nothing
+        s_l = set(l)
+        s_t = set(target)
+        if len(s_l - s_t)==0:
+            return Ls
+        if len(s_t - s_l) == 0:
+            Ls = Ls[:i] + Ls[i+1:]
+
+        i +=1
+
+    Ls.append(target)
+    return Ls
+
 
 
 def main():
     start = time.time()
     steps = 3
+    world_size = 6
     while True:
-        h = Hallway(7, steps, split=1)
+        h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
         new_steps = h.interpolants()
         print(new_steps)
         if steps == new_steps:
@@ -22,7 +54,7 @@ def main():
     steps = 2
     start = time.time()
     while True:
-        h = Hallway(7, steps)
+        h = Hallway(world_size, steps)
         print(steps)
         if h.solve():
             print("valid solution")
@@ -33,8 +65,8 @@ def main():
     print(start-end)
 
 class Hallway():
-    def __init__(self, n, depth, split=1):
-        self.solver = SolverFor("QF_FD")
+    def __init__(self, n, depth, split=1, extended_goals=[]):
+        self.solver = Solver()
         self.depth = depth
         self.length = n
         self.split = split
@@ -55,14 +87,22 @@ class Hallway():
                 collect_i.append(collect_i_j)
             self.swap_key.append(collect_i)
         goal = self.ats[-1][-1]
-        self.goal = goal
-        self.solver.add(goal)
         p1, pn = self.get_all_frames(self.split)
         self.p1 = p1
         self.p1_states = self.get_all_state_variable(1)
         self.p0_states = self.get_all_state_variable(0)
         self.pn = pn
         self.solver.add(And(p1, pn))
+        self.goal = self.obtain_goals(goal, extended_goals)
+        self.solver.add(self.goal)
+
+    def obtain_goals(self, original_goal, extended_goals= []):
+        goals = [original_goal]
+        for e_g in extended_goals:
+            e_g = And(e_g)
+            extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(self.depth-1))])
+            goals.append(extended_goals)
+        return Or(goals)
 
     def print_all_executed_actions(self, model):
         for i in range(self.depth):
@@ -196,8 +236,11 @@ class Hallway():
         #explaintory frame
             constraint.append(Implies(And(have_key_i_prime[j], Not(have_key_i[j])), Or([self.get_swap_key(i, fr, j) for fr in range(self.length) ]) ))
             #print(Implies(And(have_key_i_prime[j], Not(have_key_i[j])), Or([self.get_swap_key(i, fr, j) for fr in range(self.length) ]) ))
-        constraint.append(AtLeast(*self.get_all_act(i), 1))
-        constraint.append(AtMost(*self.get_all_act(i), 1))
+
+        #constraint.append(AtLeast(*self.get_all_act(i), 1))
+        #constraint.append(AtMost(*self.get_all_act(i), 1))
+        constraint.append(OneOf(self.get_all_act(i)))
+        #print(OneOf(self.get_all_act(i)))
         return And(constraint)
 
 
@@ -212,28 +255,41 @@ class Hallway():
            return False
 
     def interpolants(self):
+        global goal_condition
         init = self.set_init()
         steps = 0
         while True:
             self.solver.push()
             self.solver.add(init)
-            self.solver.add(self.p1)
             res = self.solver.check()
-            self.solver.pop()
             if (res == sat):
+                #analyze the model
+                m = self.solver.model()
+                self.solver.pop()
+                pos, neg = mk_lit_spilit(m, self.p0_states)
+                self.solver.push()
+                L = minimize_L(self.solver, pos, neg)
+                self.solver.pop()
+                print(L)
+                goal_condition = add_if_not_subsumed(goal_condition, L)
                 return steps + self.depth
             else:
-                A = SolverFor("QF_FD")
-                A.add(init, self.p1)
-                self.solver.push()
-                R = pogo(self.solver, A, self.p1_states)
                 self.solver.pop()
+                assert res == unsat
+                '''
+                sanity_check = Solver()
+                sanity_check.add(init, self.p1, self.pn, self.goal)
+                if sanity_check.check() == unsat:
+                    print("okay")
+                '''
+                R = binary_interpolant(And(init, self.p1), And(self.pn, self.goal))
+                #print(R)
                 new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
-                s = Solver()    
-                s.add(Not(Implies(new_init, init)))
-                if (s.check() == unsat):
-                    print("fix point, no more")
-                    return -1
+                #s = Solver()
+                #s.add(Not(Implies(new_init, init)))
+                #if (s.check() == unsat):
+                #    print("fix point, no more")
+                #    return -1
                 init = new_init
                 #print(init)
                 steps +=1
@@ -243,18 +299,33 @@ def mk_lit(m, x):
     if is_true(m.eval(x)):
        return x
     else:
-       return Not(x)
+       return Not(x) #we don't care about negated literal, at least for postive problem
 
-def minimize_L(B, L):
+def mk_lit_spilit(m, L):
+    pos = []
+    neg = []
+    for l in L:
+        if is_true(m.eval(l)):
+            pos.append(l)
+        else:
+            neg.append(Not(l))
+    return pos, neg
+
+
+
+def minimize_L(B, L, neg):
     tick = 0
     changed = True
+    B.add(And(neg))
     while changed:
         changed = False
         for i in range(len(L)):
             tick+=1
-            rst = L[:i] + L[i+1:]
-            if unsat == B.check(rst):
-                L = rst
+            current = L[i]
+            rst = L[:i] + [Not(current)] + L[i+1:]
+            if sat == B.check(rst):
+                L = L[:i]  + L[i+1:]
+                B.add(Not(current))
                 changed = True
                 break
             if tick >= 100:
