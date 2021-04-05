@@ -391,7 +391,7 @@ class Hallway():
                    remove_from_goal_distance(self.goal_parent)
                    return -1
                 #init = new_init
-                #print("new init from interpol: {}".format(init))
+                #print("new init from interpol: {}".format(new_init))
                 self.inter_init.append(new_init)
                 init = Or(self.inter_init)
                 steps +=1
@@ -435,8 +435,6 @@ class Hallway():
             else:
                 i+=1
 
-    def covered_goals(self, L):
-        
 
 
 def mk_lit(m, x):
