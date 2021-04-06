@@ -91,8 +91,8 @@ def get_other_constraints(target):
 
 def main():
     start = time.time()
-    steps = 4
-    world_size = 10
+    steps = 5
+    world_size = 7
     h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
     while True:
         new_steps = h.interpolants()
@@ -153,9 +153,11 @@ class Hallway():
         self.pn = pn
         self.solver.add(And(p1, pn))
         self.simply_goal = goal
+        self.pre_goals = True
         self.goal = self.obtain_goals(goal, extended_goals)
         self.solver.push()
         self.solver.add(self.goal)
+        self.solver.add(self.pre_goals)
         self.inter_init = [self.set_init()]
         self.other_init = True
         self.goal_parent = self.simply_goal
@@ -170,31 +172,48 @@ class Hallway():
 
     def recon_goals(self):
         goals = [self.simply_goal]
+        pre_goals = []
         for e_g in goal_condition:
             e_g = And(e_g)
-            for j in range(2, self.depth-1):
-                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(self.depth-1))])
+            for j in range(self.split, self.depth-1):
+                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
                 goals.append(extended_goals)
+
+            for j in range(self.split):
+                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
+                pre_goals.append(extended_goals)
+
         self.goal = Or(goals)
+        self.pre_goals = True
         self.solver.pop()
         self.solver.push()
         self.solver.add(self.goal)
+        self.solver.add(self.pre_goals)
         return
 
     def recon_goals_min(self):
         goals  = []
+        pre_goals = []
         e_g, v = get_one_with_the_least_step()
         self.goal_parent = e_g
         e_g = And(e_g)
         print("now consider goal {} with distance {}".format(e_g, v))
-        for j in range(2, self.depth - 1):
+        for j in range(self.split+1, self.depth - 1):
             extended_goals = substitute(e_g, [(p1_var, p0_var) for p1_var, p0_var in
-                                              zip(self.p0_states, self.get_all_state_variable(self.depth - 1))])
+                                              zip(self.p0_states, self.get_all_state_variable(j))])
             goals.append(extended_goals)
+
+        for j in range( self.split):
+            extended_goals = substitute(e_g, [(p1_var, p0_var) for p1_var, p0_var in
+                                              zip(self.p0_states, self.get_all_state_variable(j))])
+            pre_goals.append(extended_goals)
+
         self.goal = Or(goals)
+        self.pre_goals = Or(pre_goals)
         self.solver.pop()
         self.solver.push()
         self.solver.add(self.goal)
+        self.solver.add(self.pre_goals)
         self.other_init = get_other_constraints(self.goal_parent)
         self.solver.add(self.other_init)
         return
@@ -381,7 +400,7 @@ class Hallway():
                 if sanity_check.check() == unsat:
                     print("okay")
                 '''
-                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1), And(self.pn, self.goal))
+                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1, self.pre_goals), And(self.pn, self.goal))
                 #print(R)
                 new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
                 s = Solver()
@@ -392,8 +411,9 @@ class Hallway():
                    return -1
                 #init = new_init
                 #print("new init from interpol: {}".format(new_init))
-                self.inter_init.append(new_init)
-                init = Or(self.inter_init)
+                #self.inter_init.append(new_init)
+                #init = Or(self.inter_init)
+                init = new_init
                 steps +=1
                 print("progress")
 
@@ -420,10 +440,12 @@ class Hallway():
             else:
                 return
 
+
     def init_clean_up(self, L):
         i = 0
         check_solver = Solver()
         check_solver.add(L)
+        count = 0
         while i < len(self.inter_init):
             check_solver.push()
             current = self.inter_init[i]
@@ -432,9 +454,10 @@ class Hallway():
             check_solver.pop()
             if res == sat:
                 self.inter_init = self.inter_init[:i] + self.inter_init[i+1:]
+                count += 1
             else:
                 i+=1
-
+        print("removed {}".format(count))
 
 
 def mk_lit(m, x):
