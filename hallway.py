@@ -9,10 +9,18 @@ goal_condition = []
 goal_distance =dict()
 name_to_list = dict()
 parent_child = dict()
+solving_time = 0
 
 def OneOf(selections):
     if len(selections) == 0:
         return False
+    else:
+        head = selections[0]
+        return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), OneOf(selections[1:])))
+
+def AtLeastOneOf(selections):
+    if len(selections) == 0:
+        return True
     else:
         head = selections[0]
         return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), OneOf(selections[1:])))
@@ -90,9 +98,11 @@ def get_other_constraints(target):
 
 
 def main():
+    global solving_time
     start = time.time()
     steps = 5
-    world_size = 7
+    world_size = 10
+
     h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
     while True:
         new_steps = h.interpolants()
@@ -106,7 +116,7 @@ def main():
     end = time.time()
     print(start-end)
 
-    steps = 2
+    steps = 5
     start = time.time()
     while True:
         h = Hallway(world_size, steps)
@@ -118,6 +128,7 @@ def main():
             steps +=1
     end = time.time()
     print(start-end)
+    print("solving: {}".format(solving_time))
 
 class Hallway():
     def __init__(self, n, depth, split=1, extended_goals=[]):
@@ -150,6 +161,7 @@ class Hallway():
         self.i_1 = i_1
         self.i_n = i_n
         self.solver.add(self.i_1)
+        #self.solver.add(self.i_n)
         self.pn = pn
         self.solver.add(And(p1, pn))
         self.simply_goal = goal
@@ -162,6 +174,7 @@ class Hallway():
         self.other_init = True
         self.goal_parent = self.simply_goal
         goal_distance[str(self.simply_goal)] = 1
+        self.learned_inv = []
 
     def get_invaraints(self, split):
         return And([self.get_invaraint(i) for i in range(split)]), And(
@@ -175,25 +188,20 @@ class Hallway():
         pre_goals = []
         for e_g in goal_condition:
             e_g = And(e_g)
-            for j in range(self.split, self.depth-1):
+            for j in range(self.split+1, self.depth-1):
                 extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
                 goals.append(extended_goals)
 
-            for j in range(self.split):
-                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
-                pre_goals.append(extended_goals)
+
 
         self.goal = Or(goals)
-        self.pre_goals = True
         self.solver.pop()
         self.solver.push()
         self.solver.add(self.goal)
-        self.solver.add(self.pre_goals)
         return
 
     def recon_goals_min(self):
         goals  = []
-        pre_goals = []
         e_g, v = get_one_with_the_least_step()
         self.goal_parent = e_g
         e_g = And(e_g)
@@ -203,13 +211,8 @@ class Hallway():
                                               zip(self.p0_states, self.get_all_state_variable(j))])
             goals.append(extended_goals)
 
-        for j in range( self.split):
-            extended_goals = substitute(e_g, [(p1_var, p0_var) for p1_var, p0_var in
-                                              zip(self.p0_states, self.get_all_state_variable(j))])
-            pre_goals.append(extended_goals)
 
         self.goal = Or(goals)
-        self.pre_goals = Or(pre_goals)
         self.solver.pop()
         self.solver.push()
         self.solver.add(self.goal)
@@ -362,24 +365,28 @@ class Hallway():
 
         #constraint.append(AtLeast(*self.get_all_act(i), 1))
         #constraint.append(AtMost(*self.get_all_act(i), 1))
-        constraint.append(OneOf(self.get_all_act(i)))
+        constraint.append(AtLeastOneOf(self.get_all_act(i)))
         #print(OneOf(self.get_all_act(i)))
         return And(constraint)
 
 
     def solve(self):
+        global solving_time
+        start = time.time()
         init = self.set_init()
         self.solver.push()
         self.solver.add(init)
         res = self.solver.check()
         if (res == sat):
+           solving_time += (time.time() - start)
            return True
         else:
+           solving_time += (time.time() - start)
            return False
 
     def interpolants(self):
         global goal_condition
-        init = self.set_init()
+        init = Or(self.inter_init)
         steps = 0
         while True:
             self.solver.push()
@@ -388,9 +395,9 @@ class Hallway():
             if (res == sat):
                 #analyze the model
                 m = self.solver.model()
-                self.find_minimized_solutions(m, steps, upper=5)
+                frame_step = self.find_minimized_solutions(m, steps, upper=5)
                 self.solver.pop()
-                return steps + self.depth
+                return frame_step  + self.depth
             else:
                 self.solver.pop()
                 assert res == unsat
@@ -406,14 +413,15 @@ class Hallway():
                 s = Solver()
                 s.add(Not(Implies(new_init, init)))
                 if (s.check() == unsat):
+                   self.learned_inv.append(new_init)
                    print("fix point, no more")
                    remove_from_goal_distance(self.goal_parent)
                    return -1
                 #init = new_init
                 #print("new init from interpol: {}".format(new_init))
-                #self.inter_init.append(new_init)
-                #init = Or(self.inter_init)
-                init = new_init
+                self.inter_init.append(new_init)
+                init = Or(self.inter_init)
+                #init = new_init
                 steps +=1
                 print("progress")
 
@@ -424,7 +432,7 @@ class Hallway():
         min_L = minimize_L(self.solver, pos, neg)
         print(min_L)
         goal_condition = add_if_not_subsumed(goal_condition, min_L, steps, self.goal_parent)
-        self.init_clean_up(And(min_L))
+        step = self.init_clean_up(And(min_L))
         while counter < upper:
             self.solver.add(Not(And(min_L)))
             res = self.solver.check()
@@ -432,13 +440,17 @@ class Hallway():
                 m = self.solver.model()
                 pos, neg = mk_lit_spilit(m, self.p0_states)
                 min_L = minimize_L(self.solver, pos, neg)
-                self.init_clean_up(And(min_L))
+                other_step = self.init_clean_up(And(min_L))
+                if other_step < step:
+                    step = other_step
                 print(min_L)
                 goal_condition = add_if_not_subsumed(goal_condition, min_L, steps, self.goal_parent, update_parent=False)
                 counter+=1
                 continue
             else:
-                return
+                break
+
+        return step
 
 
     def init_clean_up(self, L):
@@ -453,11 +465,13 @@ class Hallway():
             res = check_solver.check()
             check_solver.pop()
             if res == sat:
-                self.inter_init = self.inter_init[:i] + self.inter_init[i+1:]
-                count += 1
+                old_len = len(self.inter_init)
+                self.inter_init = self.inter_init[:i]
+                count += (old_len - len(self.inter_init))
+                break
             else:
                 i+=1
-        print("removed {}".format(count))
+        return i
 
 
 def mk_lit(m, x):
