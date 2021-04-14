@@ -6,6 +6,7 @@ interpolant_time = 0
 
 
 goal_condition = []
+expanded_goals = []
 goal_distance =dict()
 name_to_list = dict()
 parent_child = dict()
@@ -18,12 +19,13 @@ def OneOf(selections):
         head = selections[0]
         return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), OneOf(selections[1:])))
 
-def AtLeastOneOf(selections):
+
+def AtMostOneOf(selections):
     if len(selections) == 0:
         return True
     else:
         head = selections[0]
-        return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), OneOf(selections[1:])))
+        return And(Implies(head, Not(Or(selections[1:]))), Implies(Not(head), AtMostOneOf(selections[1:])))
 
 
 
@@ -88,6 +90,13 @@ def get_one_with_the_least_step():
 
     return target, least_step
 
+def last_one_added():
+    for k in goal_condition[::-1]:
+        k = str(k)
+        v = goal_distance.get(k, -1)
+        if v!= 9999:
+            return name_to_list[k], v
+
 def get_other_constraints(target):
     rest = [Not(And(rst)) for rst in goal_condition if rst != target]
     return And(rest)
@@ -100,8 +109,8 @@ def get_other_constraints(target):
 def main():
     global solving_time
     start = time.time()
-    steps = 5
-    world_size = 10
+    steps = 4
+    world_size = 5
 
     h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
     while True:
@@ -181,7 +190,7 @@ class Hallway():
             [self.get_invaraint(i) for i in range(split, self.depth - 1)])
 
     def get_invaraint(self, frame):
-        return And(OneOf(self.ats[frame]), OneOf(self.have_key[frame]))
+        return And(AtMostOneOf(self.ats[frame]), AtMostOneOf(self.have_key[frame]))
 
     def recon_goals(self):
         goals = [self.simply_goal]
@@ -202,7 +211,7 @@ class Hallway():
 
     def recon_goals_min(self):
         goals  = []
-        e_g, v = get_one_with_the_least_step()
+        e_g, v = last_one_added()
         self.goal_parent = e_g
         e_g = And(e_g)
         print("now consider goal {} with distance {}".format(e_g, v))
@@ -365,7 +374,7 @@ class Hallway():
 
         #constraint.append(AtLeast(*self.get_all_act(i), 1))
         #constraint.append(AtMost(*self.get_all_act(i), 1))
-        constraint.append(AtLeastOneOf(self.get_all_act(i)))
+        constraint.append(AtMostOneOf(self.get_all_act(i)))
         #print(OneOf(self.get_all_act(i)))
         return And(constraint)
 
@@ -386,7 +395,7 @@ class Hallway():
 
     def interpolants(self):
         global goal_condition
-        init = Or(self.inter_init)
+        init = And(Or(self.inter_init), And(self.learned_inv))
         steps = 0
         while True:
             self.solver.push()
@@ -395,7 +404,7 @@ class Hallway():
             if (res == sat):
                 #analyze the model
                 m = self.solver.model()
-                frame_step = self.find_minimized_solutions(m, steps, upper=5)
+                frame_step = self.find_minimized_solutions(m, steps, upper=999)
                 self.solver.pop()
                 return frame_step  + self.depth
             else:
@@ -407,23 +416,28 @@ class Hallway():
                 if sanity_check.check() == unsat:
                     print("okay")
                 '''
-                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1, self.pre_goals), And(self.pn, self.goal))
+                R = binary_interpolant(And(init, self.p1, self.other_init,  self.i_1, self.pre_goals)
+                                       , And(self.pn, self.goal))
                 #print(R)
                 new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
                 s = Solver()
-                s.add(Not(Implies(new_init, init)))
+                s.add(And(Not(init), new_init))
                 if (s.check() == unsat):
                    self.learned_inv.append(new_init)
                    print("fix point, no more")
+                   print("learned {}".format(new_init))
                    remove_from_goal_distance(self.goal_parent)
                    return -1
+                else:
+                    pass
+                    #print(s.model())
                 #init = new_init
                 #print("new init from interpol: {}".format(new_init))
                 self.inter_init.append(new_init)
-                init = Or(self.inter_init)
+                init = Or(init, new_init)
                 #init = new_init
                 steps +=1
-                print("progress")
+                print("progress {}".format(steps))
 
     def find_minimized_solutions(self, m, steps, upper=5):
         global goal_condition
@@ -448,6 +462,7 @@ class Hallway():
                 counter+=1
                 continue
             else:
+                #we know all the children has been expanded, disable the parent goal
                 break
 
         return step
