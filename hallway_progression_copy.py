@@ -108,8 +108,8 @@ def get_other_constraints(target):
 def main():
     global solving_time
     start = time.time()
-    steps = 3
-    world_size = 13
+    steps = 4
+    world_size = 10
 
     h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
     while True:
@@ -123,7 +123,7 @@ def main():
             steps = steps
     end = time.time()
     print(start-end)
-
+    
     steps = 5
     start = time.time()
     while True:
@@ -141,9 +141,11 @@ def main():
 class Hallway():
     def __init__(self, n, depth, split=1, extended_goals=[]):
         self.solver = Solver()
+        self.inv_solver = Solver()
         self.depth = depth
         self.length = n
         self.split = split
+        self.neg_var_map = dict()
         self.ats = [[Bool("at_{}_{}".format(str(i), str(k))) for i in range(n)] for k in range(depth)]
         self.unlocked = [[ Bool("unlocked_{}_{}_{}".format(str(i), str(i+1), str(k))) for i in range(n-1)] + [Bool("unlocked_{}_{}_{}".format(str(i+1), str(i), str(k) )) for i in range(n-1)] for k in range(depth)]
         self.have_key =  [[Bool("have_key_{}_{}".format(str(i), str(k))) for i in range(n)] for k in range(depth)]
@@ -167,10 +169,19 @@ class Hallway():
         self.p1_states = self.get_all_state_variable(1)
         self.p0_states = self.get_all_state_variable(0)
         i_1, i_n=  self.get_invaraints(split)
+        dual_1, dual_n = self.dual_state_encodings(split)
         self.i_1 = i_1
         self.i_n = i_n
+        self.dual_1 = dual_1
+        self.dual_n = dual_n
+        self.solver.add(dual_1)
+        self.solver.add(dual_n)
         self.solver.add(self.i_1)
-        self.solver.add(self.i_n)
+        #self.solver.add(self.i_n)
+
+        self.inv_solver.add(dual_1)
+        self.inv_solver.add(i_1)
+
         self.pn = pn
         self.solver.add(And(p1, pn))
         self.simply_goal = goal
@@ -190,25 +201,33 @@ class Hallway():
             [self.get_invaraint(i) for i in range(split, self.depth - 1)])
 
     def get_invaraint(self, frame):
-        part1 = And(AtLeastOneOf(self.ats[frame]), AtLeastOneOf(self.have_key[frame]))
-        inv = []
-        for i in range(self.length - 1):
-            inv.append(Or(Not(self.get_unlocked(frame, i, i + 1)), self.get_unlocked(frame, i + 1, i)))
-            inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_unlocked(frame, i + 1, i))))
-            inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_at(frame, i + 1))))
-
-        for i in range(self.length - 2):
-            inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_unlocked(frame, i + 1, i + 2))))
-            inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_have_key(frame, i + 2))))
+        return And(AtLeastOneOf(self.ats[frame]), AtLeastOneOf(self.have_key[frame]))
 
 
-        return And(And(inv), part1)
+    def dual_state_encodings(self, split):
+        return And([self.dual_state_encodings_per_frame(i) for i in range(split)]), And(
+            [self.dual_state_encodings_per_frame(i) for i in range(split, self.depth - 1)])
 
-    def get_at(self, frame, location):
-        return self.ats[frame][location]
+    def dual_state_encodings_per_frame(self, frame):
+        state_var = self.get_all_state_variable(frame)
+        result = []
+        for var in state_var:
+            neg_var = Bool("not_{}".format(var.decl().name()))
+            self.set_neg_var(var, neg_var)
+            result.append(Or(Not(var), Not(neg_var)))
+            result.append(Or(neg_var, var))
+        return And(result)
 
-    def get_have_key(self, frame, location):
-        return self.have_key[frame][location]
+    def set_neg_var(self, var, neg_var):
+        var_name = var.decl().name()
+        neg_var_name = neg_var.decl().name()
+        self.neg_var_map[var_name] = neg_var
+        self.neg_var_map[neg_var_name] = var
+
+    def get_nag_Var(self, var):
+        var_name = var.decl().name()
+        return self.neg_var_map.get(var_name)
+
 
 
     def recon_goals(self):
@@ -216,7 +235,7 @@ class Hallway():
         pre_goals = []
         for e_g in goal_condition:
             e_g = And(e_g)
-            for j in range(self.split+1, self.depth):
+            for j in range(self.split+1, self.depth-1):
                 extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
                 goals.append(extended_goals)
 
@@ -389,9 +408,7 @@ class Hallway():
             forward_unlock.append(self.get_unlock(i, j, j+1))
             forward_unlock.append(self.get_unlock(i, j+1, j))
             constraint.append(Implies(And(unlocked_i_prime[j], Not(unlocked_i[j])), Or(forward_unlock)))
-            constraint.append(Implies(unlocked_i[j], unlocked_i_prime[j]))
             #print(Implies(And(unlocked_i_prime[j], Not(unlocked_i[j])), Or(forward_unlock)))
-
 
         for j in range(self.length-1):
             backward_unlock = []
@@ -400,7 +417,6 @@ class Hallway():
             backward_unlock.append(self.get_unlock(i, fr, to))
             backward_unlock.append(self.get_unlock(i, to, fr))
             constraint.append(Implies(And(self.get_unlocked(i+1, fr, to), Not(self.get_unlocked(i, fr, to))), Or(backward_unlock)))
-            constraint.append(Implies(self.get_unlocked(i, fr, to), self.get_unlocked(i+1, fr, to)))
             #print(Implies(And(self.get_unlocked(i+1, fr, to), Not(self.get_unlocked(i, fr, to))), Or(backward_unlock)))
 
         for j in range(self.length):
@@ -414,8 +430,6 @@ class Hallway():
 
         #explaintory frame
             constraint.append(Implies(And(have_key_i_prime[j], Not(have_key_i[j])), Or([self.get_swap_key(i, fr, j) for fr in range(self.length) ]) ))
-            constraint.append(Implies(And(Not(have_key_i_prime[j]), have_key_i[j]),
-                                      Or([self.get_swap_key(i, j, to) for to in range(self.length)])))
             #print(Implies(And(have_key_i_prime[j], Not(have_key_i[j])), Or([self.get_swap_key(i, fr, j) for fr in range(self.length) ]) ))
 
         #constraint.append(AtLeast(*self.get_all_act(i), 1))
@@ -462,8 +476,8 @@ class Hallway():
                 if sanity_check.check() == unsat:
                     print("okay")
                 '''
-                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1,  self.pre_goals)
-                                       , And(self.pn, self.goal, self.i_n))
+                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1,  self.pre_goals, self.dual_1)
+                                       , And(self.pn, self.goal, self.dual_n))
                 #print(R)
                 new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
                 s = Solver()
@@ -488,8 +502,8 @@ class Hallway():
     def find_minimized_solutions(self, m, steps, upper=5):
         global goal_condition
         counter = 0
-        pos, neg = mk_lit_spilit(m, self.p0_states)
-        min_L = minimize_L(self.solver, pos, neg)
+        pos, neg = self.mk_lit_spilit(m, self.p0_states)
+        min_L = self.minimize_L(self.solver, pos, neg)
         print(min_L)
         goal_condition = add_if_not_subsumed(goal_condition, min_L, steps, self.goal_parent)
         step = self.init_clean_up(And(min_L))
@@ -498,8 +512,8 @@ class Hallway():
             res = self.solver.check()
             if (res == sat):
                 m = self.solver.model()
-                pos, neg = mk_lit_spilit(m, self.p0_states)
-                min_L = minimize_L(self.solver, pos, neg)
+                pos, neg = self.mk_lit_spilit(m, self.p0_states)
+                min_L = self.minimize_L(self.solver, pos, neg)
                 other_step = self.init_clean_up(And(min_L))
                 if other_step < step:
                     step = other_step
@@ -533,6 +547,63 @@ class Hallway():
                 i+=1
         return i
 
+    def mk_lit_spilit(self, m, L):
+        pos = []
+        neg = []
+        for l in L:
+            if is_true(m.eval(l)):
+                pos.append(l)
+            else:
+                neg.append(self.get_nag_Var(l))
+        return pos, neg
+
+
+    def clean_up(self, L, neg):
+        new_L = []
+        for l in L:
+            if l in neg:
+                new_L.append(Not(self.get_nag_Var(l)))
+            else:
+                new_L.append(l)
+        return new_L
+
+    def minimize_L(self, B, L, neg):
+        B.push()
+        tick = 0
+        changed = True
+        L = neg + L
+        while changed:
+            changed = False
+            for i in range(len(L)):
+                current = L[i]
+                neg_current = self.get_nag_Var(current)
+                rst = L[:i] +  L[i + 1:]
+
+                self.inv_solver.push()
+                self.inv_solver.add(Not(Implies(And(rst), And(L))))
+                if unsat == self.inv_solver.check():
+                    self.inv_solver.pop()
+                    L = rst
+                    changed = True
+                    break
+                else:
+                    self.inv_solver.pop()
+
+                tick += 1
+                rst = L[:i] + [neg_current] + L[i + 1:]
+                if sat == B.check(rst):
+                    L = L[:i] + L[i + 1:]
+                    #B.add(neg_current)
+                    changed = True
+                    break
+
+                if tick >= 1000:
+                    print("wow")
+                    B.pop()
+                    return self.clean_up(L,neg)
+        B.pop()
+        return self.clean_up(L,neg)
+
 
 def mk_lit(m, x):
     if is_true(m.eval(x)):
@@ -540,42 +611,13 @@ def mk_lit(m, x):
     else:
        return Not(x) #we don't care about negated literal, at least for postive problem
 
-def mk_lit_spilit(m, L):
-    pos = []
-    neg = []
-    for l in L:
-        if is_true(m.eval(l)):
-            pos.append(l)
-        else:
-            neg.append(Not(l))
-    return pos, neg
 
 
 
 
 
-def minimize_L(B, L, neg):
-    B.push()
-    tick = 0
-    changed = True
-    B.add(And(neg))
-    while changed:
-        changed = False
-        for i in range(len(L)):
-            tick+=1
-            current = L[i]
-            rst = L[:i] + [Not(current)] + L[i+1:]
-            if sat == B.check(rst):
-                L = L[:i]  + L[i+1:]
-                B.add(Not(current))
-                changed = True
-                break
-            if tick >= 100:
-                print("wow")
-                B.pop()
-                return L
-    B.pop()
-    return L
+
+
 
 
 

@@ -6,10 +6,13 @@ interpolant_time = 0
 
 
 goal_condition = []
+blocked = []
+global_inv= []
 goal_distance =dict()
 name_to_list = dict()
 parent_child = dict()
 solving_time = 0
+inter_solving_time = 0
 
 def OneOf(selections):
     if len(selections) == 0:
@@ -28,7 +31,7 @@ def AtLeastOneOf(selections):
 
 
 
-def add_if_not_subsumed(Ls, target, steps, parent, update_parent = True):
+def add_if_not_subsumed(Ls, target):
     i = 0
     while i < len(Ls):
         l = Ls[i]
@@ -43,7 +46,7 @@ def add_if_not_subsumed(Ls, target, steps, parent, update_parent = True):
         i +=1
 
     Ls.append(target)
-    add_to_goal_distance(target, steps, parent, update_parent = update_parent)
+    #add_to_goal_distance(target, steps, parent, update_parent = update_parent)
     return Ls
 
 
@@ -109,21 +112,29 @@ def main():
     global solving_time
     start = time.time()
     steps = 3
-    world_size = 13
+    world_size = 10
+    opt = (steps <= 3)
 
     h = Hallway(world_size, steps, split=1, extended_goals=goal_condition)
     while True:
         new_steps = h.interpolants()
-        print(new_steps)
+        #print(new_steps)
         if steps == new_steps:
             print("valid solution")
             break
+        elif new_steps == -1:
+            if (h.recon_single_goal(failed=True, opt=opt)):
+                continue
+            else:
+                print("unreachable goal")
+                break
         else:
-            h.recon_goals()
+            h.recon_single_goal(opt=opt)
             steps = steps
     end = time.time()
     print(start-end)
-
+    print("solving: {}".format(inter_solving_time))
+    '''
     steps = 5
     start = time.time()
     while True:
@@ -137,7 +148,7 @@ def main():
     end = time.time()
     print(start-end)
     print("solving: {}".format(solving_time))
-
+    '''
 class Hallway():
     def __init__(self, n, depth, split=1, extended_goals=[]):
         self.solver = Solver()
@@ -151,6 +162,9 @@ class Hallway():
         self.move= [[ Bool("move_{}_{}_{}".format(i, i+1, k )) for i in range(n-1)] + [Bool("move_{}_{}_{}".format(i+1, i, k )) for i in range(n-1)] for k in range(depth)]
         self.unlock = [[ Bool("unlock_{}_{}_{}".format(str(i), str(i+1), str(k))) for i in range(n-1)] + [Bool("unlock_{}_{}_{}".format(str(i+1), str(i), str(k) )) for i in range(n-1)] for k in range(depth)]
 
+        self.goal_inv_1 = True
+        self.goal_inv_n = True
+
         self.swap_key = []
         for k in range(depth):
             collect_i = []
@@ -161,39 +175,42 @@ class Hallway():
                 collect_i.append(collect_i_j)
             self.swap_key.append(collect_i)
         #goal = self.set_final()
+        #goal = self.set_goal()
         goal = self.ats[-1][-1]
         p1, pn = self.get_all_frames(self.split)
         self.p1 = p1
-        self.p1_states = self.get_all_state_variable(1)
+        self.p1_states = self.get_all_state_variable(self.split)
         self.p0_states = self.get_all_state_variable(0)
+        self.plast_states = self.get_all_state_variable(self.depth-1)
         i_1, i_n=  self.get_invaraints(split)
         self.i_1 = i_1
         self.i_n = i_n
         self.solver.add(self.i_1)
         self.solver.add(self.i_n)
+        #  temp inv to block cyclic path
+        self.temp_i1 = True
+        self.temp_in = True
+
+        #holding the learned invararint
+        self.learned_inv = True
         self.pn = pn
         self.solver.add(And(p1, pn))
         self.simply_goal = goal
-        self.pre_goals = True
-        self.goal = self.obtain_goals(goal, extended_goals)
+        self.goal = self.obtain_goals(goal)
+        self.init = self.set_init(default=False)
         self.solver.push()
-        self.solver.add(self.goal)
-        self.solver.add(self.pre_goals)
-        self.inter_init = [self.set_init()]
-        self.other_init = True
-        self.goal_parent = self.simply_goal
-        goal_distance[str(self.simply_goal)] = 1
-        self.learned_inv = []
+        self.inter_final = [self.simply_goal]
+        self.solver.add(self.init)
 
     def get_invaraints(self, split):
         return And([self.get_invaraint(i) for i in range(split)]), And(
-            [self.get_invaraint(i) for i in range(split, self.depth - 1)])
+            [self.get_invaraint(i) for i in range(split, self.depth)])
 
     def get_invaraint(self, frame):
         part1 = And(AtLeastOneOf(self.ats[frame]), AtLeastOneOf(self.have_key[frame]))
         inv = []
-        for i in range(self.length - 1):
-            inv.append(Or(Not(self.get_unlocked(frame, i, i + 1)), self.get_unlocked(frame, i + 1, i)))
+        for i in range(self.length-1):
+            inv.append(Or(Not(self.get_unlocked(frame, i, i+1)), self.get_unlocked(frame, i+1, i)))
             inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_unlocked(frame, i + 1, i))))
             inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_at(frame, i + 1))))
 
@@ -201,32 +218,105 @@ class Hallway():
             inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_unlocked(frame, i + 1, i + 2))))
             inv.append(Or(self.get_unlocked(frame, i, i + 1), Not(self.get_have_key(frame, i + 2))))
 
-
         return And(And(inv), part1)
 
-    def get_at(self, frame, location):
-        return self.ats[frame][location]
-
-    def get_have_key(self, frame, location):
-        return self.have_key[frame][location]
-
-
     def recon_goals(self):
-        goals = [self.simply_goal]
-        pre_goals = []
+        inits = [self.init]
         for e_g in goal_condition:
             e_g = And(e_g)
-            for j in range(self.split+1, self.depth):
-                extended_goals = substitute(e_g, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p0_states, self.get_all_state_variable(j))])
-                goals.append(extended_goals)
+            extended_init = substitute(e_g, [(p1_var, p0_var) for p1_var, p0_var in
+                                              zip(self.plast_states, self.p0_states)])
+            inits.append(extended_init)
 
-
-
-        self.goal = Or(goals)
+        self.init = Or(inits)
         self.solver.pop()
         self.solver.push()
-        self.solver.add(self.goal)
+        self.solver.add(self.init)
         return
+
+
+    def prepare_transitive_invaraint(self):
+        inv_i1 = []
+        inv_in  = []
+        for i in range(self.split):
+            swap_map_before = [(p1_var, p0_var) for p1_var, p0_var in
+                        zip(self.p1_states, self.get_all_state_variable(i))]
+
+            swap_map_after = [(p1_var, p0_var) for p1_var, p0_var in
+                               zip(self.p1_states, self.get_all_state_variable(i+1))]
+
+            for trans in global_inv:
+                inv_i1.append(Implies(substitute(trans, swap_map_before), substitute(trans, swap_map_after)))
+
+        for i in range(self.split, self.depth-1):
+            swap_map_before = [(p1_var, p0_var) for p1_var, p0_var in
+                        zip(self.p1_states, self.get_all_state_variable(i))]
+
+            swap_map_after = [(p1_var, p0_var) for p1_var, p0_var in
+                               zip(self.p1_states, self.get_all_state_variable(i+1))]
+
+            for trans in global_inv:
+                inv_in.append(Implies(substitute(trans, swap_map_before), substitute(trans, swap_map_after)))
+
+        global_inv.clear()
+        return inv_i1, inv_in
+
+
+
+    def recon_single_goal(self, failed = False, opt = True):
+        considered_history = 999 #only consider the past 20 child
+        max_failure = 999
+        inits = goal_condition
+        if failed:
+            failed = goal_condition.pop()
+            blocked.append(failed)
+            if len(blocked) > max_failure:
+                blocked.pop(0)
+            if len(goal_condition) == 0:
+                return False
+
+        target = inits[-1]
+        others = blocked + inits[max(0, len(inits)-1-considered_history):len(inits)-1]
+        inv_i1 = []
+        inv_in = []
+        if opt:
+            for i in range(self.split):
+                swap_map =  [(p1_var, p0_var) for p1_var, p0_var in
+                                                  zip(self.p0_states, self.get_all_state_variable(i))]
+                for other in others:
+                    inv_i1.append(substitute(Not(And(other)), swap_map))
+
+            for i in range(self.split, self.depth):
+                swap_map =  [(p1_var, p0_var) for p1_var, p0_var in
+                                                  zip(self.p0_states, self.get_all_state_variable(i))]
+                for other in others:
+                    inv_in.append(substitute(Not(And(other)), swap_map))
+            self.temp_i1 = And(inv_i1)
+            self.temp_in = And(inv_in)
+        else:
+            swap_map = [(p1_var, p0_var) for p1_var, p0_var in
+                        zip(self.p0_states, self.plast_states)]
+            for other in others:
+                inv_in.append(substitute(Not(And(other)), swap_map))
+
+            self.temp_i1 = True
+            self.temp_in = And(inv_in)
+
+
+        self.init = And(target)
+        self.solver.pop()
+
+        #time to add global inv
+        if len(global_inv) > 0:
+            g1 , gn = self.prepare_transitive_invaraint()
+            self.goal_inv_1 = And(And(g1), self.goal_inv_1)
+            self.goal_inv_n = And(And(gn), self.goal_inv_n)
+            self.solver.add(self.goal_inv_1, self.goal_inv_n)
+
+        self.solver.push()
+        self.solver.add(self.init)
+        self.solver.add(self.temp_i1, self.temp_in)
+        return True
 
     def recon_goals_min(self):
         goals  = []
@@ -287,26 +377,69 @@ class Hallway():
         else:
             return self.unlock[frame][self.length-1 + to]
 
-    def set_init(self):
-        init_constraints = []
-        for i in range(self.length):
-            v = self.ats[0][i]
-            if i != 0:
-                init_constraints.append(Not(v))
-            else:
-                init_constraints.append(v)
+    def get_at(self, frame, location):
+        return self.ats[frame][location]
 
-        for i in range(self.length):
-            v = self.have_key[0][i]
-            if i != 1:
-                init_constraints.append(Not(v))
-            else:
-                init_constraints.append(v)
+    def get_have_key(self, frame, location):
+        return self.have_key[frame][location]
 
-        for i in range(len(self.unlocked[0])):
-            v = self.unlocked[0][i]
-            init_constraints.append(Not(v))
-        return And(init_constraints)
+    def set_init_by_description(self):
+        facts = []
+        facts.append(self.get_at(0, 0))
+        facts.append(self.get_have_key(0, 1))
+
+        '''
+        facts.append(self.get_unlocked(0, 0, 1))
+        facts.append(self.get_unlocked(0, 1, 0))
+
+
+        facts.append(self.get_unlocked(0, 1, 2))
+        facts.append(self.get_unlocked(0, 2, 1))
+    
+        facts.append(self.get_unlocked(0, 2, 3))
+        facts.append(self.get_unlocked(0, 3, 2))
+
+        facts.append(self.get_unlocked(0, 4, 3))
+        facts.append(self.get_unlocked(0, 3, 4))
+        
+        facts.append(self.get_unlocked(0, 4, 5))
+        facts.append(self.get_unlocked(0, 5, 4))
+        facts.append(self.get_unlocked(0, 5, 6))
+        facts.append(self.get_unlocked(0, 6, 5))
+        facts.append(self.get_unlocked(0, 6, 7))
+        facts.append(self.get_unlocked(0, 7, 6))
+        '''
+
+
+
+        others = self.get_all_state_variable(0)
+        others_constrant = [Not(v) for v in others if v not in facts]
+        return And(facts + others_constrant)
+
+
+    def set_init(self ,default = True):
+        if default:
+            init_constraints = []
+            for i in range(self.length):
+                v = self.ats[0][i]
+                if i != 0:
+                    init_constraints.append(Not(v))
+                else:
+                    init_constraints.append(v)
+
+            for i in range(self.length):
+                v = self.have_key[0][i]
+                if i != 1:
+                    init_constraints.append(Not(v))
+                else:
+                    init_constraints.append(v)
+
+            for i in range(len(self.unlocked[0])):
+                v = self.unlocked[0][i]
+                init_constraints.append(Not(v))
+            return And(init_constraints)
+        else:
+            return self.set_init_by_description()
 
     def set_final(self):
         final_constraints = []
@@ -331,7 +464,7 @@ class Hallway():
         return And(final_constraints)
 
     def set_goal(self):
-        return Or([self.ats[i][self.length-1] for i in range(self.depth)])
+        return Or([self.ats[i][self.length-1] for i in range(self.split, self.depth)])
 
     def set_goal_i(self, i):
         return Or([self.ats[j][self.length-1] for j in range(i, self.depth)])
@@ -428,9 +561,9 @@ class Hallway():
     def solve(self):
         global solving_time
         start = time.time()
-        init = self.set_init()
+        goal = self.set_goal()
         self.solver.push()
-        self.solver.add(init)
+        self.solver.add(goal)
         res = self.solver.check()
         if (res == sat):
            solving_time += (time.time() - start)
@@ -441,18 +574,23 @@ class Hallway():
 
     def interpolants(self):
         global goal_condition
-        init = And(Or(self.inter_init), And(self.learned_inv))
+        global inter_solving_time
+        goal = self.inter_final[-1]
         steps = 0
         while True:
             self.solver.push()
-            self.solver.add(init)
+            self.solver.add(goal)
+            s_time = time.time()
             res = self.solver.check()
+            inter_solving_time += (time.time() - s_time)
             if (res == sat):
                 #analyze the model
                 m = self.solver.model()
-                frame_step = self.find_minimized_solutions(m, steps, upper=5)
+                frame_step = self.find_minimized_solutions(m, steps, upper=0)
                 self.solver.pop()
-                return frame_step  + self.depth
+                #print(frame_step * (self.depth-self.split) + self.depth)
+                #return frame_step  + self.depth
+                return frame_step * (self.depth-self.split) + self.depth
             else:
                 self.solver.pop()
                 assert res == unsat
@@ -462,49 +600,59 @@ class Hallway():
                 if sanity_check.check() == unsat:
                     print("okay")
                 '''
-                R = binary_interpolant(And(init, self.p1, self.other_init, self.i_1,  self.pre_goals)
-                                       , And(self.pn, self.goal, self.i_n))
+                front = And(self.init, self.p1, self.i_1, self.temp_i1, self.goal_inv_1)
+                back = And(self.pn, goal, self.i_n, self.temp_in, self.goal_inv_n)
+                s_time = time.time()
+                R = simplify(binary_interpolant(back, front))
+                inter_solving_time += (time.time() - s_time)
                 #print(R)
-                new_init = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.p0_states)])
+                new_final = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.p1_states, self.plast_states)])
                 s = Solver()
-                s.add(And(Not(init), new_init))
+                s.add(And(Not(goal), new_final))
                 if (s.check() == unsat):
-                   self.learned_inv.append(new_init)
                    print("fix point, no more")
-                   print("learned {}".format(new_init))
-                   remove_from_goal_distance(self.goal_parent)
+                   #print(R)
+                   #global_inv.append(R)
                    return -1
                 else:
                     pass
-                    #print(s.model())
-                #init = new_init
-                #print("new init from interpol: {}".format(new_init))
-                self.inter_init.append(new_init)
-                init = Or(init, new_init)
-                #init = new_init
+                self.inter_final.append(new_final)
+                goal = new_final
                 steps +=1
-                print("progress {}".format(steps))
+                #print("progress {}".format(steps))
 
-    def find_minimized_solutions(self, m, steps, upper=5):
+    def state_project(self, target_lst, sources_to_target):
+        res_lst = []
+        for target in target_lst:
+            res_lst.append(substitute(target, sources_to_target))
+        return res_lst
+
+
+    def find_minimized_solutions(self, m, steps, upper=99):
         global goal_condition
         counter = 0
-        pos, neg = mk_lit_spilit(m, self.p0_states)
+        pos, neg = mk_lit_spilit(m, self.plast_states)
         min_L = minimize_L(self.solver, pos, neg)
-        print(min_L)
-        goal_condition = add_if_not_subsumed(goal_condition, min_L, steps, self.goal_parent)
+        #min_L = pos+neg
+        #print(min_L)
+        self.print_all_executed_actions(m)
+        #print(pos)
+        swap_dict= [(p1_var, p0_var) for p1_var, p0_var in
+                                              zip(self.plast_states, self.p0_states)]
+        goal_condition = add_if_not_subsumed(goal_condition, self.state_project(min_L, swap_dict))
         step = self.init_clean_up(And(min_L))
         while counter < upper:
             self.solver.add(Not(And(min_L)))
             res = self.solver.check()
             if (res == sat):
                 m = self.solver.model()
-                pos, neg = mk_lit_spilit(m, self.p0_states)
+                pos, neg = mk_lit_spilit(m, self.plast_states)
                 min_L = minimize_L(self.solver, pos, neg)
                 other_step = self.init_clean_up(And(min_L))
-                if other_step < step:
-                    step = other_step
-                print(min_L)
-                goal_condition = add_if_not_subsumed(goal_condition, min_L, steps, self.goal_parent, update_parent=False)
+                step += other_step
+                print("solution:")
+                self.print_all_executed_actions(m)
+                goal_condition = add_if_not_subsumed(goal_condition, self.state_project(min_L, swap_dict))
                 counter+=1
                 continue
             else:
@@ -518,16 +666,16 @@ class Hallway():
         check_solver = Solver()
         check_solver.add(L)
         count = 0
-        while i < len(self.inter_init):
+        while i < len(self.inter_final):
             check_solver.push()
-            current = self.inter_init[i]
+            current = self.inter_final[i]
             check_solver.add(current)
             res = check_solver.check()
             check_solver.pop()
             if res == sat:
-                old_len = len(self.inter_init)
-                self.inter_init = self.inter_init[:i]
-                count += (old_len - len(self.inter_init))
+                old_len = len(self.inter_final)
+                self.inter_final = self.inter_final[:i]
+                count += (old_len - len(self.inter_final))
                 break
             else:
                 i+=1
@@ -544,27 +692,32 @@ def mk_lit_spilit(m, L):
     pos = []
     neg = []
     for l in L:
-        if is_true(m.eval(l)):
+        res= m.eval(l)
+        if is_true(res):
             pos.append(l)
-        else:
+        elif is_false(res):
             neg.append(Not(l))
+        else:
+            pass
+            #pos.append(l)
     return pos, neg
 
 
 
 
 
-def minimize_L(B, L, neg):
+def minimize_L(B, pos, neg):
     B.push()
+    L = neg
     tick = 0
     changed = True
-    B.add(And(neg))
+    B.add(And(pos))
     while changed:
         changed = False
         for i in range(len(L)):
             tick+=1
             current = L[i]
-            rst = L[:i] + [Not(current)] + L[i+1:]
+            rst = L[:i] + [current.arg(0)] + L[i+1:]
             if sat == B.check(rst):
                 L = L[:i]  + L[i+1:]
                 B.add(Not(current))
@@ -573,9 +726,9 @@ def minimize_L(B, L, neg):
             if tick >= 100:
                 print("wow")
                 B.pop()
-                return L
+                return L+pos
     B.pop()
-    return L
+    return L+pos
 
 
 
