@@ -241,15 +241,49 @@ def get_exclusion_constraints(n):
 def analyze_actions_for_exclusion(i):
     all_act = get_all_acts()
     constraints = []
+    flip = dict()
     for act in all_act:
         act_constraint = []
         flipped = set([flip_act for flip_act in act.precondition if (flip_act.reverse is not None and flip_act.reverse in act.effects)])
+        collect_flipped(flip, act, flipped)
         consequence = [precond.get_frame_var_dur_act(i) for precond in act.precondition if precond not in flipped] +\
                       [eff.get_frame_var_dur_act(i) for eff in act.effects]
         act_constraint.append(Implies(act.get_frame_var(i), And(consequence)))
         constraints += act_constraint
+
+    constraints += generate_mutex(flip, i)
+
     return And(constraints)
 
+mutex = set()
+
+def collect_flipped(flipped, act, flipping):
+    for prop in flipping:
+        p_res = flipped.get(prop, set())
+        p_res.add(act)
+        flipped[prop] = p_res
+
+def get_bmutex_from_col(col, i ):
+    if len(col) == 0:
+        return []
+    else:
+        head = col[0]
+        rst = col[1:]
+        return [And(head.get_frame_var(i), prop.get_frame_var(i)) for prop in rst if not add_bmutex_if_not_exists(head, prop)]+get_bmutex_from_col(rst, i)
+
+def add_bmutex_if_not_exists(p1, p2):
+    if (p1, p2) in mutex or (p2, p1) in mutex:
+        return True
+    else:
+        mutex.add((p1, p2))
+        return False
+
+
+def generate_mutex(flipped, i):
+    constraints = []
+    for key, value in flipped.items():
+        constraints += get_bmutex_from_col(list(value), i)
+    return constraints
 
 
 

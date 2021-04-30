@@ -84,7 +84,12 @@ if __name__ == "__main__":
             proposition_lookup("on", [bG, bI])]
 
 
-    solver = solver(3, init, goal, 1)
+    solver = solver(100, init, goal, 1)
+    res = solver.solve()
+    if res:
+        print("hi")
+    else:
+        print("not yet")
 
 
     #print("Hi")
