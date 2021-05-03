@@ -14,11 +14,12 @@ class solver():
         action_frames = collect_all_frames(depth)
         exp = explanatory_frame(depth)
         exclusive_constraints = get_exclusion_constraints(depth)
+        print("start1")
 
         #TODO optimize it with subs
         self.p1 = action_frames[:split] + exp[:split] + exclusive_constraints[:split]
         self.pn = action_frames[split:] + exp[split:] + exclusive_constraints[split:]
-
+        print("start over")
         #I and G
         self.init =init_condition(init_prop)
         self.goal = final_condition(goal_prop, depth)
@@ -39,6 +40,8 @@ class solver():
         self.tmp_i1 = True
         self.tmp_in = True
 
+        print("start Done")
+
 
     def solve(self):
         global solving_time
@@ -46,6 +49,7 @@ class solver():
         goal = self.goal
         self.solver.push()
         self.solver.add(goal)
+        print("start solving")
         res = self.solver.check()
         if (res == sat):
            solving_time += (time.time() - start)

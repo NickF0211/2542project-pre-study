@@ -179,7 +179,10 @@ def collect_action_frame(i):
     return And(res)
 
 def explanatory_frame(n):
-    return [explanatory_frame_per_i(i) for i in range(n-1)]
+    print("start")
+    res = [explanatory_frame_per_i(i) for i in range(n - 1)]
+    print("end")
+    return res
 
 def explanatory_frame_per_i(i):
     res = []
@@ -231,12 +234,14 @@ def get_all_props():
         return all_props
 
 def get_exclusion_constraints(n):
+    print("start1")
     all_act = get_all_acts()
     #exclusive_acts = get_exclusive_actions()
     f0 = analyze_actions_for_exclusion(0)
-    zero_vars = [act.get_frame_var(0) for act in all_act]
+    zero_vars = [act.get_frame_var(0) for act in all_act] + [prop.get_frame_var_dur_act(0)  for prop in get_all_props()]
+    print("start1")
     return [f0] + [substitute(f0, [(p1_var, p0_var) for p1_var, p0_var in
-                                              zip(zero_vars, [act.get_frame_var(i) for act in all_act])]) for i in range(1, n-1)]
+                                              zip(zero_vars, [act.get_frame_var(i) for act in all_act] + [prop.get_frame_var_dur_act(i)  for prop in get_all_props()])] ) for i in range(1, n-1)]
 
 def analyze_actions_for_exclusion(i):
     all_act = get_all_acts()
@@ -269,7 +274,7 @@ def get_bmutex_from_col(col, i ):
     else:
         head = col[0]
         rst = col[1:]
-        return [And(head.get_frame_var(i), prop.get_frame_var(i)) for prop in rst if not add_bmutex_if_not_exists(head, prop)]+get_bmutex_from_col(rst, i)
+        return [Not(And(head.get_frame_var(i), prop.get_frame_var(i))) for prop in rst if not add_bmutex_if_not_exists(head, prop)]+get_bmutex_from_col(rst, i)
 
 def add_bmutex_if_not_exists(p1, p2):
     if (p1, p2) in mutex or (p2, p1) in mutex:
