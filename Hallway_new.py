@@ -36,5 +36,5 @@ if __name__ == "__main__":
 
 
     solver = solver(3, init, goal, split=1)
-    #solver.interpolantion_solving()
-    solver.interpolantion_solving_union()
+    solver.interpolantion_solving()
+    #solver.interpolantion_solving_union()

@@ -330,6 +330,8 @@ def final_condition(pos_props, n):
     return And([pos_prop.get_frame_var(n-1) for pos_prop in pos_props])
 
 
+
+
 def monotone_constraint(n):
     m_prop = find_monotone()
     return [inductive_constraints(m_prop, i) for i in range(n-1)]
@@ -374,6 +376,34 @@ def find_monotone():
     return mon
 
 
+
+def build_action_inv():
+    shared_effects = []
+    for prop, actions in prop_impacted.items():
+        common_effect = None
+        for action in actions:
+            if common_effect is None:
+                common_effect = set(action.effects)
+            else:
+                common_effect = common_effect - set(action.effects)
+
+        filter_common_act = []
+        for se in common_effect:
+            if se == prop:
+                continue
+            should_include = True
+            #check the effect negats them, if prop is in them, then we can say they are invaraints
+            se_n_acts = prop_impacted.get(reverse(se), [])
+            for action in se_n_acts:
+                if not reverse(prop) in action.effects:
+                    should_include = False
+                    break
+            if should_include:
+                filter_common_act.append(se)
+
+        if filter_common_act != []:
+            shared_effects.append((prop, filter_common_act))
+    return shared_effects
 
 
 
