@@ -14,6 +14,10 @@ class Action():
         self.effects = effects
         self.frame_var = []
         self.pre_to_effect = []
+        self.base_var = Bool("{}_{}".format(self.name, args_to_name(self.paras)))
+
+    def get_base_var(self):
+        return self.base_var
 
     def create_frame(self, n):
         self.frame_var = [Bool("{}_{}_{}".format(self.name, args_to_name(self.paras), i)) for i in range(n-1)]
@@ -68,6 +72,20 @@ def _create_action(prefix, arg_type_list, pre_condition_funcs, effects_functions
             _create_action(new_prefix, arg_type_list[1:], pre_condition_funcs, effects_functions, constraints, collections)
 
 
+def create_extended_action(composing_action, precondition, effects):
+    global all_act
+    name = "Combined"
+    col = Action.collection.get("Combined", dict())
+    target_action = Action(name, composing_action, precondition, effects)
+    col[args_to_name(composing_action)] = Action(name, composing_action, precondition, effects)
+    Action.collection["Combined"] = col
+    #alter all_actions
+    if all_act != []:
+        all_act.append(target_action)
+
+    return target_action
+
+
 class Proposition():
     collection = dict()
     def __init__(self, name, paramters, polarity = True):
@@ -76,6 +94,7 @@ class Proposition():
         self.reverse = None
         self.polarity = polarity
         self.frame_var = []
+        self.exception_frame_var = []
 
     def create_frame(self, n):
         if self.polarity:
@@ -83,6 +102,10 @@ class Proposition():
         else:
             self.frame_var = [Not(Bool("{}_{}_{}".format(self.name, args_to_name(self.para), i))) for i in range(n)]
 
+        self.exception_frame_var = [Bool("exception_{}_{}".format(str(self), i)) for i in range(n)]
+
+    def get_exception_frame_var(self, i):
+        return self.exception_frame_var[i]
 
     def get_frame_var(self, i):
         return self.frame_var[i]
@@ -113,6 +136,9 @@ def proposition_lookup(name, args):
     res = Proposition.collection.get(name, dict()).get(args_to_name(args), None)
     return res
 
+def action_lookup(name, args):
+    res = Action.collection.get(name, dict()).get(args_to_name(args), None)
+    return res
 '''
 forall arg in arg_list,  arg = (arg_type_list)
 '''
@@ -190,7 +216,9 @@ def collect_action_frame(i):
     return And(res)
 
 def explanatory_frame(n):
-    res = [explanatory_frame_per_i(i) for i in range(n - 1)]
+    res =[]
+    for i in range(n-1):
+        res.append(explanatory_frame_per_i(i))
     return res
 
 def explanatory_frame_per_i(i):
@@ -198,7 +226,8 @@ def explanatory_frame_per_i(i):
     for key, actions in prop_impacted.items():
         impacted_prop = key.get_frame_var(i)
         next_prop = key.get_frame_var(i+1)
-        constraints = []
+        rst_reason = key.get_exception_frame_var(i)
+        constraints = [rst_reason]
         for act in actions:
             act_var = act.get_frame_var(i)
             #preconditions = [prop.get_frame_var(i) for prop in act.precondition]
@@ -206,6 +235,25 @@ def explanatory_frame_per_i(i):
         res.append(Implies(And(Not(impacted_prop), next_prop),  Or(constraints)))
 
     return And(res)
+
+def init_explain_constraint(i):
+    constraint = dict()
+    for prop in prop_impacted:
+        constraint[prop] = [False]
+    return constraint
+
+def encode_exception(collections,  n):
+    all_concern_props = prop_impacted.keys()
+    f0 = And( [ Implies(key.get_exception_frame_var(0), Or(value)) for key, value in collections[0].items()])
+    zero_mask  = [prop.get_exception_frame_var(0) for prop in all_concern_props] + [act.get_frame_var(0) for act in get_all_acts()]
+
+
+    rst = [substitute(f0, [(p1_var, p0_var) for p1_var, p0_var in
+                                    zip(zero_mask,
+                                       [prop.get_exception_frame_var(i) for prop in all_concern_props] + [act.get_frame_var(i) for act in get_all_acts()])]) for i in range(1, n - 1)]
+
+    return [f0] + rst
+
 
 def is_exclusive(act1, act2):
     for pre_act1 in act1.precondition:
@@ -223,22 +271,22 @@ def is_dependent(act1, act2):
     return True
 
 def get_all_acts():
+    global all_act
     if all_act == []:
-        acts = []
         for act_values in Action.collection.values():
             for act in act_values.values():
-                acts.append(act)
-        return acts
+                all_act.append(act)
+        return all_act
     else:
         return all_act
 
 def get_all_props():
+    global all_props
     if all_props == []:
-        props = []
         for prop_values in Proposition.collection.values():
             for prop in prop_values.values():
-                props.append(prop)
-        return props
+                all_props.append(prop)
+        return all_props
     else:
         return all_props
 
@@ -268,6 +316,8 @@ def analyze_actions_for_exclusion(i):
     constraints += generate_mutex(flip, i)
 
     return And(constraints)
+
+
 
 mutex = set()
 
@@ -373,6 +423,41 @@ def find_monotone():
             if r_prop not in props:
                 mon.append(prop)
     return mon
+
+def single_impacted(prop):
+    return len(prop_impacted.get(prop, [])) == 1
+
+
+def analyzing_conflicting_actions():
+    all_act = get_all_acts()
+    flip = dict()
+    for act in all_act:
+        flipped = set([flip_act for flip_act in act.precondition if
+                       (flip_act.reverse is not None and flip_act.reverse in act.effects)])
+        collect_flipped(flip, act, flipped)
+
+    #now analyze
+    condition_constraint = dict()
+    for key, values in flip.items():
+        if len(values) > 1:
+            for act1 in values:
+                single_impated_e1 = [ e1  for e1 in act1.effects if single_impacted(e1)]
+                if single_impated_e1 == []:
+                    continue
+                for act2 in values:
+                    if act1 == act2:
+                        continue
+                    single_impated_e2 = [ e2  for e2 in act2.effects if single_impacted(e2)]
+                    for se1 in single_impated_e1:
+                        for se2 in single_impated_e2:
+                            condition_constraint[(se1, se2)] = act1.precondition + act2.precondition
+
+
+    return condition_constraint
+
+
+
+
 
 
 

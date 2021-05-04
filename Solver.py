@@ -6,6 +6,7 @@ solving_time = 0
 
 class solver():
     def __init__(self,  depth,  init_prop, goal_prop, mutexes = [], split=1 ):
+        self.pending_constraint = []
         self.depth = depth
         self.act_length = depth-1
         self.split = split
@@ -22,6 +23,7 @@ class solver():
         exclusive_constraints = self.seq_encoding()
         m_constraints = monotone_constraint(self.depth)
 
+        #analyzing_conflicting_actions()
         build_action_inv()
 
         #TODO optimize it with subs
@@ -52,6 +54,15 @@ class solver():
 
         #stable constraints
         self.solver.add(self.p1 + self.pn)
+
+        #The first layer, which are used to record frames
+        self.solver.push()
+        #now add the rst_explained constraints
+        self.explain_exception = [ init_explain_constraint(i)  for i in range(self.depth-1)]
+        explanation = encode_exception(self.explain_exception ,self.depth)
+        self.exp1 =  And(explanation[:self.split])
+        self.expn = And(explanation[self.split:])
+        self.solver.add(explanation)
 
         # invaraints
         self.tmp_i1 = True
@@ -190,6 +201,68 @@ class solver():
                 steps = steps
 
 
+    def extract_and_create_action(self, m):
+        executed_act = self.get_all_executed_actions(m, act_var=True)
+        if len(executed_act) < 2:
+            return
+        else:
+            actions =[]
+            activation_precondition = set()
+            activation_effects = set()
+            for step_actions in executed_act:
+                for action in step_actions:
+                    actions.append(action)
+                    for prop in action.precondition:
+                        if reverse(prop) not in activation_precondition:
+                            activation_precondition.add(prop)
+                    for e_prop in action.effects:
+                        if reverse(e_prop) in activation_effects:
+                            activation_effects.remove(reverse(e_prop))
+                        activation_effects.add(e_prop)
+
+        target_action = create_extended_action(actions, activation_precondition, activation_effects)
+        target_action.create_frame(self.depth)
+        target_action.analyze_effects()
+
+        action_frame = [target_action.pre_to_effect[i] for i in range (self.act_length)]
+        act1, actn = action_frame[:self.split], action_frame[self.split:]
+        for effect in target_action.effects:
+            for i in range(len(self.explain_exception)):
+                explain = self.explain_exception[i]
+                act_explain = explain.get(effect, [False])
+                act_explain.append(target_action.get_frame_var(i))
+                explain[effect] = act_explain
+
+        explanation = encode_exception(self.explain_exception ,self.depth)
+        self.exp1 =  And(explanation[:self.split])
+        self.expn = And(explanation[self.split:])
+
+        #assume sequential encoding:
+        all_act = get_all_acts()
+        f0 = Implies(target_action.get_frame_var(0), Not(Or(self.get_act_vars(0))))
+
+        for i in range(self.act_length):
+            self.acts_vars[i].append(target_action.get_frame_var(i))
+
+        zero_mask = self.get_act_vars(0)
+        exceptions = [f0] + [substitute(f0, [ (p1_var, p0_var) for p1_var, p0_var in zip(zero_mask, self.get_act_vars(i))]) for i in range(1, self.act_length)]
+        except1, exceptn = exceptions[: self.split], exceptions[self.split:]
+
+        self.p1 += act1
+        self.p1 += except1
+        self.p1c = And(self.p1c, And(act1+ except1))
+        self.pn += actn
+        self.pn += exceptn
+        self.p1c = And(self.p1c, And(actn + exceptn))
+
+        self.pending_constraint.append(exceptions + action_frame)
+
+
+
+
+
+
+
     def interpolants(self):
         goal = self.inter_final[-1]
         steps = 0
@@ -203,6 +276,8 @@ class solver():
                 m_min = self.minimize_number_of_action()
                 if m_min is not None:
                     m = m_min
+                else:
+                    self.extract_and_create_action(m)
                 frame_step = self.find_minimized_solutions(m, steps, upper=0)
                 self.solver.pop()
                 return frame_step * (self.depth-self.split) + self.depth
@@ -216,10 +291,10 @@ class solver():
                     print("oops")
                 '''
 
-                front = And(self.init, self.p1c, self.tmp_i1)
-                back = And(self.pnc, goal, self.tmp_in)
+                front = And(self.init, self.p1c, self.tmp_i1 ,self.exp1)
+                back = And(self.pnc, goal, self.tmp_in, self.expn)
                 R = simplify(binary_interpolant(back, front))
-                new_final = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.get_state_vars(1), self.get_state_vars(self.depth-1))])
+                new_final = substitute(R, [ (p1_var, p0_var) for p1_var, p0_var in zip(self.get_state_vars(self.split), self.get_state_vars(self.depth-1))])
                 s = Solver()
                 s.add(And(Not(goal), new_final))
                 if (s.check() == unsat):
@@ -247,7 +322,17 @@ class solver():
                                        zip(zero_vars, self.get_act_vars(i))]) for i in
                        range(1, self.act_length)]
 
+    def handle_pending_constraint(self):
+        if self.pending_constraint != []:
+            self.solver.pop()
+            self.solver.add(self.pending_constraint[0])
+            self.solver.push()
+            self.solver.add(self.exp1, self.expn)
+
+            self.pending_constraint.clear()
+
     def recon_goals(self):
+        #first check if there is pending constraint
         inits = []
         for e_g in self.goal_condition:
             e_g = And(e_g)
@@ -255,6 +340,7 @@ class solver():
 
         self.init = Or(inits)
         self.solver.pop()
+        self.handle_pending_constraint()
         self.solver.push()
         self.solver.add(self.init)
         return
@@ -307,7 +393,7 @@ class solver():
 
         self.init = And(target)
         self.solver.pop()
-
+        self.handle_pending_constraint()
         #time to add global inv
         '''
         if len(self.global_inv) > 0:
@@ -321,6 +407,25 @@ class solver():
         self.solver.add(self.init)
         self.solver.add(self.tmp_i1, self.tmp_in)
         return True
+
+    def get_all_executed_actions(self, model, act_var=False):
+        steps  = []
+        for i in range(self.act_length):
+            e_a = []
+            acts = self.get_act_vars(i)
+            for act in acts:
+                val = model[act]
+                if val:
+                    if act_var:
+                        act_name = str(act)
+                        name_args = act_name.split('_')
+                        act = action_lookup(name_args[0], name_args[1:len(name_args) -1])
+                        if act is not None:
+                            e_a.append(act)
+            steps.append(e_a)
+        return steps
+
+
 
     def print_all_executed_actions(self, model):
         for i in range(self.act_length):
@@ -399,9 +504,7 @@ class solver():
         return i
 
     def state_project(self, target_lst, sources_to_target):
-        res_lst = []
-        for target in target_lst:
-            res_lst.append(substitute(target, sources_to_target))
+        res_lst = substitute(And(target_lst), sources_to_target).children()
         return res_lst
 
     def forbid_action(self, i):

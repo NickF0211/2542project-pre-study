@@ -85,7 +85,16 @@ if __name__ == "__main__":
             proposition_lookup("on", ["H", "B"]),
             proposition_lookup("on", ["B", "A"]),
             proposition_lookup("on", ["A", "G"]),
-            proposition_lookup("on", ["G", "I"])]
+            proposition_lookup("on", ["G", "I"]),
+            reverse(proposition_lookup("on-table", ["D"])),
+            reverse(proposition_lookup("on-table", ["C"])),
+            reverse(proposition_lookup("on-table", ["F"])),
+            reverse(proposition_lookup("on-table", ["J"])),
+            reverse(proposition_lookup("on-table", ["E"])),
+            reverse(proposition_lookup("on-table", ["H"])),
+            reverse(proposition_lookup("on-table", ["B"])),
+            reverse(proposition_lookup("on-table", ["A"])),
+            reverse(proposition_lookup("on-table", ["G"]))]
 
     mutexes = []
     for b1 in Blocks:
@@ -109,7 +118,7 @@ if __name__ == "__main__":
         mutexes.append(l_mutex)
 
     solver = solver(3, init, goal, mutexes=mutexes, split=1)
-    solver.interpolantion_solving_union()
+    solver.interpolantion_solving()
 
 
 
