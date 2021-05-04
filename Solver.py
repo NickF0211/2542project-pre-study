@@ -160,7 +160,7 @@ class solver():
         steps = self.depth
         while True:
             new_steps = self.interpolants()
-            # print(new_steps)
+            #print(new_steps)
             if steps == new_steps:
                 print("valid solution")
                 break

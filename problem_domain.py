@@ -149,7 +149,10 @@ def Fnot(func):
     return lambda arg : reverse(func(arg))
 
 def Select(func, index):
-    return lambda arg: func([arg[index]])
+    if type(index) is int:
+        return lambda arg: func([arg[index]])
+    elif type(index) is list:
+        return lambda arg: func([arg[i] for i in index])
 
 def Re_Order(func,  indexes):
     def new_func(args):
