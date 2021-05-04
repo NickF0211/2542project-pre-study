@@ -385,8 +385,23 @@ def build_action_inv():
                 common_effect = set(action.effects)
             else:
                 common_effect = common_effect - set(action.effects)
-        #common_effect.add(prop)
-        shared_effects.append((prop, common_effect))
+
+        filter_common_act = []
+        for se in common_effect:
+            if se == prop:
+                continue
+            should_include = True
+            #check the effect negats them, if prop is in them, then we can say they are invaraints
+            se_n_acts = prop_impacted.get(reverse(se), [])
+            for action in se_n_acts:
+                if not reverse(prop) in action.effects:
+                    should_include = False
+                    break
+            if should_include:
+                filter_common_act.append(se)
+
+        if filter_common_act != []:
+            shared_effects.append((prop, filter_common_act))
     return shared_effects
 
 
