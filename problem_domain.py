@@ -152,6 +152,7 @@ def Select(func, index):
     if type(index) is int:
         return lambda arg: func([arg[index]])
     elif type(index) is list:
+        #print(lambda arg: func([arg[i] for i in index]))
         return lambda arg: func([arg[i] for i in index])
 
 def Re_Order(func,  indexes):
