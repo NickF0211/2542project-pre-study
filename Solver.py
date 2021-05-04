@@ -5,7 +5,7 @@ from invaraint_builder import Invaraint_builder
 solving_time = 0
 
 class solver():
-    def __init__(self,  depth,  init_prop, goal_prop, split=1 ):
+    def __init__(self,  depth,  init_prop, goal_prop, mutexes = [], split=1 ):
         self.depth = depth
         self.act_length = depth-1
         self.split = split
@@ -23,9 +23,16 @@ class solver():
         m_constraints = monotone_constraint(self.depth)
 
 
+
         #TODO optimize it with subs
         self.p1 = action_frames[:split] + exp[:split] + exclusive_constraints[:split] + m_constraints[:split]
         self.pn = action_frames[split:] + exp[split:] + exclusive_constraints[split:]+ m_constraints[split:]
+
+        if mutexes != []:
+            mutexes_inv = build_mutexes_constraint(mutexes, self.depth)
+            self.p1 += mutexes_inv[:split]
+            self.pn += mutexes_inv[split:]
+
         self.p1c = And(self.p1)
         self.pnc = And(self.pn)
 
@@ -404,6 +411,7 @@ class solver():
 
 def add_if_not_subsumed(Ls, target):
     i = 0
+    '''
     while i < len(Ls):
         l = Ls[i]
         #if l subsumes target, then do nothing
@@ -415,7 +423,7 @@ def add_if_not_subsumed(Ls, target):
             Ls = Ls[:i] + Ls[i+1:]
 
         i +=1
-
+    '''
     Ls.append(target)
     #add_to_goal_distance(target, steps, parent, update_parent = update_parent)
     return Ls

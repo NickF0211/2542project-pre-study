@@ -14,10 +14,12 @@ class Block():
 
 
 
+
 if __name__ == "__main__":
+    pl = proposition_lookup
     #bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
         #Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
-    Blocks = ("A", "B", "C")
+    Blocks = ("A", "B", "C", "D" ,"E", "F", "G", "H", "I", "J")
     create_proposition("on", [Blocks, Blocks], [lambda arg1, arg2: arg1 != arg2])
     create_proposition("on-table", [Blocks])
     create_proposition("holding", [Blocks])
@@ -59,18 +61,54 @@ if __name__ == "__main__":
                      Fnot(get_empty),
                      Fnot(get_on)], [lambda arg1, arg2: arg1 != arg2])
 
-
-    init = [proposition_lookup("clear", "C"),
-            proposition_lookup("on-table", "A"),
-            proposition_lookup("on", ["C", "B"]),
-            proposition_lookup("on", ["B", "A"]),
+    init = [pl("clear", "C"),
+            pl("clear", "F"),
+            pl("on-table", "I"),
+            pl("on-table", "F"),
+            pl("on", ["C", "E"]),
+            pl("on", ["E", "J"]),
+            pl("on", ["J", "B"]),
+            pl("on", ["B", "G"]),
+            pl("on", ["G", "H"]),
+            pl("on", ["H", "A"]),
+            pl("on", ["A", "D"]),
+            pl("on", ["D", "I"]),
             proposition_lookup("empty", [])]
 
-    goal = [proposition_lookup("on", ["B", "C"]),
-            proposition_lookup("on", ["A", "B"])]
 
 
-    solver = solver(3, init, goal, 1)
+    goal = [proposition_lookup("on", ["D", "C"]),
+            proposition_lookup("on", ["C", "F"]),
+            proposition_lookup("on", ["F", "J"]),
+            proposition_lookup("on", ["J", "E"]),
+            proposition_lookup("on", ["E", "H"]),
+            proposition_lookup("on", ["H", "B"]),
+            proposition_lookup("on", ["B", "A"]),
+            proposition_lookup("on", ["A", "G"]),
+            proposition_lookup("on", ["G", "I"])]
+
+    mutexes = []
+    for b1 in Blocks:
+        l_mutex = []
+        for b2 in Blocks:
+            prop = pl("on", [b1, b2])
+            if prop is not None:
+                l_mutex.append(prop)
+        l_mutex.append(pl("on-table", b1))
+
+        mutexes.append(l_mutex)
+
+    for b2 in Blocks:
+        l_mutex = []
+        for b1 in Blocks:
+            prop = pl("on", [b1, b2])
+            if prop is not None:
+                l_mutex.append(prop)
+        l_mutex.append(pl("clear", b2))
+
+        mutexes.append(l_mutex)
+
+    solver = solver(5, init, goal, mutexes=mutexes, split=1)
     solver.interpolantion_solving_union()
 
 

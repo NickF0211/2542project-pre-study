@@ -331,6 +331,20 @@ def monotone_constraint(n):
     return [inductive_constraints(m_prop, i) for i in range(n-1)]
 
 
+def build_mutexes_constraint(mutexes, n):
+    all_prop = get_all_props()
+    f0 = define_mutexes(mutexes, 0)
+    zero_vars = [prop.get_frame_var(0) for prop in all_prop]
+    return [f0] + [substitute(f0, [(p1_var, p0_var) for p1_var, p0_var in
+                                   zip(zero_vars, [prop.get_frame_var(i) for prop in all_prop])]) for i in range(1, n)]
+
+def define_mutexes(mutexes, i):
+    constraints = []
+    for mutex in mutexes:
+        constraints.append(AtLeastOneOf([prop.get_frame_var(i) for prop in mutex]))
+    return And(constraints)
+
+
 def inductive_constraints(props, i):
     cons = []
     for prop in props:
