@@ -35,6 +35,6 @@ if __name__ == "__main__":
     goal = [proposition_lookup("at", [9])]
 
 
-    solver = solver(3, init, goal, 1)
+    solver = solver(3, init, goal, split=1)
     solver.interpolantion_solving()
     #solver.interpolantion_solving_union()

@@ -22,7 +22,7 @@ class solver():
         exclusive_constraints = self.seq_encoding()
         m_constraints = monotone_constraint(self.depth)
 
-
+        build_action_inv()
 
         #TODO optimize it with subs
         self.p1 = action_frames[:split] + exp[:split] + exclusive_constraints[:split] + m_constraints[:split]
