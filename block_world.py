@@ -15,9 +15,9 @@ class Block():
 
 
 if __name__ == "__main__":
-    bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
-        Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
-    Blocks = (bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ)
+    #bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
+        #Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
+    Blocks = ("A", "B", "C")
     create_proposition("on", [Blocks, Blocks], [lambda arg1, arg2: arg1 != arg2])
     create_proposition("on-table", [Blocks])
     create_proposition("holding", [Blocks])
@@ -47,6 +47,7 @@ if __name__ == "__main__":
                   , [Fnot(Select(get_holding, 0)),
                      Fnot(Select(get_clear, 1)),
                      get_empty,
+                     Select(get_clear, 0),
                      get_on], [lambda arg1, arg2: arg1 != arg2])
 
     create_action("unstack", [Blocks, Blocks], [get_on,
@@ -59,37 +60,19 @@ if __name__ == "__main__":
                      Fnot(get_on)], [lambda arg1, arg2: arg1 != arg2])
 
 
-    init = [proposition_lookup("clear", [bC]),
-            proposition_lookup("clear", [bF]),
-            proposition_lookup("on-table", [bI]),
-            proposition_lookup("on-table", [bF]),
-            proposition_lookup("on", [bC, bE]),
-            proposition_lookup("on", [bE, bJ]),
-            proposition_lookup("on", [bJ, bB]),
-            proposition_lookup("on", [bB, bG]),
-            proposition_lookup("on", [bG, bH]),
-            proposition_lookup("on", [bH, bA]),
-            proposition_lookup("on", [bA, bD]),
-            proposition_lookup("on", [bD, bI]),
+    init = [proposition_lookup("clear", "C"),
+            proposition_lookup("on-table", "A"),
+            proposition_lookup("on", ["C", "B"]),
+            proposition_lookup("on", ["B", "A"]),
             proposition_lookup("empty", [])]
 
-    goal = [proposition_lookup("on", [bD, bC]),
-            proposition_lookup("on", [bC, bF]),
-            proposition_lookup("on", [bF, bJ]),
-            proposition_lookup("on", [bJ, bE]),
-            proposition_lookup("on", [bE, bH]),
-            proposition_lookup("on", [bH, bB]),
-            proposition_lookup("on", [bB, bA]),
-            proposition_lookup("on", [bA, bG]),
-            proposition_lookup("on", [bG, bI])]
+    goal = [proposition_lookup("on", ["B", "C"]),
+            proposition_lookup("on", ["A", "B"])]
 
 
-    solver = solver(100, init, goal, 1)
-    res = solver.solve()
-    if res:
-        print("hi")
-    else:
-        print("not yet")
+    solver = solver(3, init, goal, 1)
+    solver.interpolantion_solving_union()
+
 
 
     #print("Hi")

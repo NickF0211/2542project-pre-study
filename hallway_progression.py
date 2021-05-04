@@ -632,8 +632,8 @@ class Hallway():
         global goal_condition
         counter = 0
         pos, neg = mk_lit_spilit(m, self.plast_states)
-        min_L = minimize_L(self.solver, pos, neg)
-        #min_L = pos+neg
+        #min_L = minimize_L(self.solver, pos, neg)
+        min_L = pos+neg
         #print(min_L)
         self.print_all_executed_actions(m)
         #print(pos)

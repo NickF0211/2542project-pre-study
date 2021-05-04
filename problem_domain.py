@@ -151,6 +151,14 @@ def Fnot(func):
 def Select(func, index):
     return lambda arg: func([arg[index]])
 
+def Re_Order(func,  indexes):
+    def new_func(args):
+        new_args = []
+        for index in indexes:
+            new_args.append(args[index])
+        return func(new_args)
+    return new_func
+
 
 '''
 For SAT encoding function
@@ -179,9 +187,7 @@ def collect_action_frame(i):
     return And(res)
 
 def explanatory_frame(n):
-    print("start")
     res = [explanatory_frame_per_i(i) for i in range(n - 1)]
-    print("end")
     return res
 
 def explanatory_frame_per_i(i):
@@ -192,8 +198,8 @@ def explanatory_frame_per_i(i):
         constraints = []
         for act in actions:
             act_var = act.get_frame_var(i)
-            preconditions = [prop.get_frame_var(i) for prop in act.precondition]
-            constraints.append(And(preconditions + [act_var]))
+            #preconditions = [prop.get_frame_var(i) for prop in act.precondition]
+            constraints.append(act_var)
         res.append(Implies(And(Not(impacted_prop), next_prop),  Or(constraints)))
 
     return And(res)
@@ -291,7 +297,6 @@ def generate_mutex(flipped, i):
     return constraints
 
 
-
 def get_exclusion_constraints_old(n):
     all_act = get_all_acts()
     exclusive_acts = get_exclusive_actions()
@@ -305,17 +310,50 @@ def _get_exclusion_constraint(exclusive_acts, i):
     return And([ Implies(act1.get_frame_var(i), Not(Or([act2.get_frame_var(i) for act2 in act2s] ))) for (act1, act2s) in exclusive_acts])
 
 
-def init_condition(pos_prop):
+def init_condition(pos_prop, concat = True):
     constraints = []
     for prop in get_all_props():
         if prop in pos_prop:
             constraints.append(prop.get_frame_var(0))
         else:
             constraints.append(Not(prop.get_frame_var(0)))
-    return And(constraints)
+    if concat:
+        return And(constraints)
+    else:
+        return constraints
 
 def final_condition(pos_props, n):
     return And([pos_prop.get_frame_var(n-1) for pos_prop in pos_props])
+
+
+def monotone_constraint(n):
+    m_prop = find_monotone()
+    return [inductive_constraints(m_prop, i) for i in range(n-1)]
+
+
+def inductive_constraints(props, i):
+    cons = []
+    for prop in props:
+        old_v = prop.get_frame_var(i)
+        new_v = prop.get_frame_var(i+1)
+        cons.append(Implies(old_v, new_v))
+    return And(cons)
+
+
+
+
+
+def find_monotone():
+    props = prop_impacted.keys()
+    mon =[]
+    for prop in props:
+        r_prop = prop.reverse
+        if r_prop is None:
+            mon.append(prop)
+        else:
+            if r_prop not in props:
+                mon.append(prop)
+    return mon
 
 
 
@@ -334,3 +372,11 @@ def get_exclusive_actions():
         if len(disabled) > 0:
             constrainted.append((act1, disabled))
     return constrainted
+
+
+def AtLeastOneOf(selections):
+    if len(selections) == 0:
+        return True
+    else:
+        head = selections[0]
+        return And(Implies(head, Not(Or(selections[1:]))), AtLeastOneOf(selections[1:]))
