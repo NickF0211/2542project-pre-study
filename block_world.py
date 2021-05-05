@@ -118,7 +118,7 @@ if __name__ == "__main__":
         mutexes.append(l_mutex)
 
     solver = solver(3, init, goal, mutexes=mutexes, split=1)
-    solver.interpolantion_solving()
+    solver.interpolantion_solving_union()
 
 
 

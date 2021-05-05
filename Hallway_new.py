@@ -1,7 +1,7 @@
 from Solver import *
 
 if __name__ == "__main__":
-    Room = range(10)
+    Room = range(20)
     next_to_other = lambda a, b: a - b == 1 or b -a == 1
     create_proposition("at", [Room])
     create_proposition("has-key", [Room])
@@ -32,9 +32,11 @@ if __name__ == "__main__":
             proposition_lookup("has-key", [1]),
             ]
 
-    goal = [proposition_lookup("at", [9])]
+    goal = [proposition_lookup("at", [19])]
 
 
     solver = solver(3, init, goal, split=1)
-    solver.interpolantion_solving_union()
+    start = time.time()
+    solver.interpolantion_solving(opt=False)
+    print(time.time()-start)
     #solver.interpolantion_solving_union()

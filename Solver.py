@@ -7,6 +7,7 @@ solving_time = 0
 class solver():
     def __init__(self,  depth,  init_prop, goal_prop, mutexes = [], split=1 ):
         self.pending_constraint = []
+        self.last_action =[]
         self.depth = depth
         self.act_length = depth-1
         self.split = split
@@ -209,16 +210,15 @@ class solver():
             actions =[]
             activation_precondition = set()
             activation_effects = set()
-            for step_actions in executed_act:
-                for action in step_actions:
-                    actions.append(action)
-                    for prop in action.precondition:
-                        if reverse(prop) not in activation_precondition:
-                            activation_precondition.add(prop)
-                    for e_prop in action.effects:
-                        if reverse(e_prop) in activation_effects:
-                            activation_effects.remove(reverse(e_prop))
-                        activation_effects.add(e_prop)
+            for action in executed_act:
+                actions.append(action)
+                for prop in action.precondition:
+                    if reverse(prop) not in activation_precondition:
+                        activation_precondition.add(prop)
+                for e_prop in action.effects:
+                    if reverse(e_prop) in activation_effects:
+                        activation_effects.remove(reverse(e_prop))
+                    activation_effects.add(e_prop)
 
         target_action = create_extended_action(actions, activation_precondition, activation_effects)
         target_action.create_frame(self.depth)
@@ -250,12 +250,12 @@ class solver():
 
         self.p1 += act1
         self.p1 += except1
-        self.p1c = And(self.p1c, And(act1+ except1))
+        self.p1c = And(self.p1)
         self.pn += actn
         self.pn += exceptn
-        self.p1c = And(self.p1c, And(actn + exceptn))
+        self.pnc = And(self.pn)
 
-        self.pending_constraint.append(exceptions + action_frame)
+        self.pending_constraint.append(exceptions +action_frame)
 
 
 
@@ -276,8 +276,7 @@ class solver():
                 m_min = self.minimize_number_of_action()
                 if m_min is not None:
                     m = m_min
-                else:
-                    self.extract_and_create_action(m)
+                self.extract_and_create_action(m)
                 frame_step = self.find_minimized_solutions(m, steps, upper=0)
                 self.solver.pop()
                 return frame_step * (self.depth-self.split) + self.depth
@@ -346,8 +345,8 @@ class solver():
         return
 
     def recon_single_goal(self, failed = False, opt = True):
-        considered_history = 999 #only consider the past 20 child
-        max_failure = 999
+        considered_history = 5 #only consider the past 20 child
+        max_failure = 5
         inits = self.goal_condition
         if failed:
             failed = self.goal_condition.pop()
@@ -411,7 +410,6 @@ class solver():
     def get_all_executed_actions(self, model, act_var=False):
         steps  = []
         for i in range(self.act_length):
-            e_a = []
             acts = self.get_act_vars(i)
             for act in acts:
                 val = model[act]
@@ -421,8 +419,7 @@ class solver():
                         name_args = act_name.split('_')
                         act = action_lookup(name_args[0], name_args[1:len(name_args) -1])
                         if act is not None:
-                            e_a.append(act)
-            steps.append(e_a)
+                            steps.append(act)
         return steps
 
 
@@ -496,7 +493,10 @@ class solver():
             check_solver.pop()
             if res == sat:
                 old_len = len(self.inter_final)
-                self.inter_final = self.inter_final[:i]
+                if i > 1:
+                    self.inter_final = self.inter_final[:i-1]
+                else:
+                    self.inter_final = self.inter_final[:i]
                 count += (old_len - len(self.inter_final))
                 break
             else:
