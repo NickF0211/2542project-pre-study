@@ -19,7 +19,7 @@ if __name__ == "__main__":
     pl = proposition_lookup
     #bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
         #Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
-    Blocks = range(7)
+    Blocks = range(5)
     create_proposition("on", [Blocks, Blocks], [lambda arg1, arg2: arg1 != arg2])
     create_proposition("on-table", [Blocks])
     create_proposition("holding", [Blocks])
@@ -53,7 +53,7 @@ if __name__ == "__main__":
                      get_on], [lambda arg1, arg2: arg1 != arg2])
 
     create_action("unstack", [Blocks, Blocks], [get_on,
-                                               get_empty,
+                                              get_empty,
                                                 Select(get_clear, 0) ]
                   , [Select(get_holding, 0),
                      Select(get_clear, 1),
@@ -62,21 +62,16 @@ if __name__ == "__main__":
                      Fnot(get_on)], [lambda arg1, arg2: arg1 != arg2])
 
     init = [pl("clear", [0]),
-            pl("clear", [6]),
             pl("on-table", [4]),
-            pl("on-table", [5]),
             pl("on", [0, 1]),
             pl("on", [1, 2]),
             pl("on", [2, 3]),
             pl("on", [3, 4]),
-            pl("on", [6, 5]),
             proposition_lookup("empty", [])]
 
 
 
-    goal = [proposition_lookup("on", [6, 5]),
-            proposition_lookup("on", [5, 4]),
-            proposition_lookup("on", [4, 3]),
+    goal = [proposition_lookup("on", [4, 3]),
             proposition_lookup("on", [3, 2]),
             proposition_lookup("on", [2, 1]),
             proposition_lookup("on", [1, 0])
