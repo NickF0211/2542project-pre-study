@@ -5,9 +5,9 @@ from invaraint_builder import Invaraint_builder
 solving_time = 0
 
 class solver():
-    def __init__(self,  depth,  init_prop, goal_prop, mutexes = [], split=1 ):
+    def __init__(self,  depth,  init_prop, goal_prop, mutexes = [], split=1, user_inv=[] ):
         self.pending_constraint = []
-        self.last_action =[]
+        self.last_action = None
         self.depth = depth
         self.act_length = depth-1
         self.split = split
@@ -30,6 +30,12 @@ class solver():
         #TODO optimize it with subs
         self.p1 = action_frames[:split] + exp[:split] + exclusive_constraints[:split] + m_constraints[:split]
         self.pn = action_frames[split:] + exp[split:] + exclusive_constraints[split:]+ m_constraints[split:]
+
+        if user_inv != []:
+            user_inv = self.build_inv_constraint(user_inv)
+            self.p1 += user_inv[:split]
+            self.pn += user_inv[split:]
+
 
         if mutexes != []:
             mutexes_inv = build_mutexes_constraint(mutexes, self.depth)
@@ -109,6 +115,21 @@ class solver():
         self.pnc = And(self.pnc, And(total[self.split:]))
         self.solver.add(total)
         self.inv += total[0]
+
+    def build_inv_constraint(self, invaraints):
+        all_constraints = []
+        all_prop = get_all_props()
+        all_action = get_all_acts()
+        fbase = [prop.get_base_var() for prop in all_prop]
+        for i in range(self.depth):
+            i_mask = [prop.get_frame_var(i) for prop in all_prop]
+            constraints = []
+            for inv in invaraints:
+                constraints.append(substitute(inv, [(p1_var, p0_var) for p1_var, p0_var in
+                                    zip(fbase,i_mask)]))
+
+            all_constraints.append(And(constraints))
+        return all_constraints
 
 
 
@@ -207,18 +228,31 @@ class solver():
         if len(executed_act) < 2:
             return
         else:
-            actions =[]
-            activation_precondition = set()
-            activation_effects = set()
-            for action in executed_act:
-                actions.append(action)
-                for prop in action.precondition:
-                    if reverse(prop) not in activation_precondition:
-                        activation_precondition.add(prop)
-                for e_prop in action.effects:
-                    if reverse(e_prop) in activation_effects:
-                        activation_effects.remove(reverse(e_prop))
-                    activation_effects.add(e_prop)
+            self.chain_acts(executed_act)
+        '''
+        if self.last_action is not None:
+            head= self.last_action
+            tail = executed_act[0]
+            seq = [head, tail]
+            # ensure they are compatible
+            if compatible_sequences(seq):
+                self.chain_acts(seq)
+        '''
+        self.last_action = executed_act[-1]
+
+    def chain_acts(self, executed_act):
+        actions =[]
+        activation_precondition = set()
+        activation_effects = set()
+        for action in executed_act:
+            actions.append(action)
+            for prop in action.precondition:
+                if prop not in activation_effects:
+                    activation_precondition.add(prop)
+            for e_prop in action.effects:
+                if reverse(e_prop) in activation_effects:
+                    activation_effects.remove(reverse(e_prop))
+                activation_effects.add(e_prop)
 
         target_action = create_extended_action(actions, activation_precondition, activation_effects)
         target_action.create_frame(self.depth)
@@ -233,12 +267,9 @@ class solver():
                 act_explain.append(target_action.get_frame_var(i))
                 explain[effect] = act_explain
 
-        explanation = encode_exception(self.explain_exception ,self.depth)
-        self.exp1 =  And(explanation[:self.split])
-        self.expn = And(explanation[self.split:])
 
         #assume sequential encoding:
-        all_act = get_all_acts()
+        #all_act = get_all_acts()
         f0 = Implies(target_action.get_frame_var(0), Not(Or(self.get_act_vars(0))))
 
         for i in range(self.act_length):
@@ -324,8 +355,12 @@ class solver():
     def handle_pending_constraint(self):
         if self.pending_constraint != []:
             self.solver.pop()
-            self.solver.add(self.pending_constraint[0])
+            for p in self.pending_constraint:
+                self.solver.add(p)
             self.solver.push()
+            explanation = encode_exception(self.explain_exception, self.depth)
+            self.exp1 = And(explanation[:self.split])
+            self.expn = And(explanation[self.split:])
             self.solver.add(self.exp1, self.expn)
 
             self.pending_constraint.clear()

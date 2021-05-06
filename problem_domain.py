@@ -95,6 +95,10 @@ class Proposition():
         self.polarity = polarity
         self.frame_var = []
         self.exception_frame_var = []
+        self.base_var = Bool("{}_{}".format(self.name, args_to_name(self.para)))
+
+    def get_base_var(self):
+        return self.base_var
 
     def create_frame(self, n):
         if self.polarity:
@@ -394,6 +398,8 @@ def build_mutexes_constraint(mutexes, n):
     return [f0] + [substitute(f0, [(p1_var, p0_var) for p1_var, p0_var in
                                    zip(zero_vars, [prop.get_frame_var(i) for prop in all_prop])]) for i in range(1, n)]
 
+
+
 def define_mutexes(mutexes, i):
     constraints = []
     for mutex in mutexes:
@@ -513,3 +519,21 @@ def AtLeastOneOf(selections):
     else:
         head = selections[0]
         return And(Implies(head, Not(Or(selections[1:]))), AtLeastOneOf(selections[1:]))
+
+
+def compatible_sequences(sequences):
+    known_fact = set()
+    for action in sequences:
+        for pre in action.precondition:
+            if reverse(pre) in known_fact:
+                return False
+            else:
+                known_fact.add(pre)
+
+        for effect in action.effects:
+            r_effect = reverse(effect)
+            if r_effect in known_fact:
+                known_fact.remove(r_effect)
+            known_fact.add(effect)
+    return True
+

@@ -19,7 +19,7 @@ if __name__ == "__main__":
     pl = proposition_lookup
     #bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
         #Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
-    Blocks = range(5)
+    Blocks = range(10)
     create_proposition("on", [Blocks, Blocks], [lambda arg1, arg2: arg1 != arg2])
     create_proposition("on-table", [Blocks])
     create_proposition("holding", [Blocks])
@@ -62,19 +62,30 @@ if __name__ == "__main__":
                      Fnot(get_on)], [lambda arg1, arg2: arg1 != arg2])
 
     init = [pl("clear", [0]),
-            pl("on-table", [4]),
+            pl("on-table", [9]),
             pl("on", [0, 1]),
             pl("on", [1, 2]),
             pl("on", [2, 3]),
             pl("on", [3, 4]),
+            pl("on", [4, 5]),
+            pl("on", [5, 6]),
+            pl("on", [6, 7]),
+            pl("on", [7, 8]),
+            pl("on", [8, 9]),
             proposition_lookup("empty", [])]
 
 
 
     goal = [proposition_lookup("on", [4, 3]),
-            proposition_lookup("on", [3, 2]),
-            proposition_lookup("on", [2, 1]),
-            proposition_lookup("on", [1, 0])
+            proposition_lookup("on", [3, 1]),
+            proposition_lookup("on", [1, 2]),
+            proposition_lookup("on", [2, 0]),
+            proposition_lookup("on", [5, 4]),
+            proposition_lookup("on", [6, 5]),
+            proposition_lookup("on", [7, 6]),
+            proposition_lookup("on", [8, 7]),
+            proposition_lookup("on", [9, 8]),
+
             ]
 
     mutexes = []
@@ -98,9 +109,13 @@ if __name__ == "__main__":
 
         mutexes.append(l_mutex)
 
-    solver = solver(3, init, goal, mutexes=mutexes, split=1)
-    solver.interpolantion_solving_union()
+    inv = [Or([pl("on-table", [b]).get_base_var() for b in Blocks])]
 
+    solver = solver(3, init, goal, mutexes=mutexes, split=1, user_inv=inv)
+    #solver.interpolantion_solving_union()
+    start = time.time()
+    solver.interpolantion_solving_union()
+    print(time.time() - start)
 
 
     #print("Hi")
