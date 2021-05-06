@@ -116,8 +116,10 @@ if __name__ == "__main__":
 
 	goal = [proposition_lookup("at-goal", ["stone-01"]),
 			proposition_lookup("at-goal", ["stone-02"])]
-	solver = solver(20, init, goal, split=1)
-	solver.solve()
+	solver = solver(3, init, goal, split=1)
+	start = time.time()
+	solver.interpolantion_solving()
+	print(time.time() - start)
 
 
 

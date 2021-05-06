@@ -345,8 +345,8 @@ class solver():
         return
 
     def recon_single_goal(self, failed = False, opt = True):
-        considered_history = 5 #only consider the past 20 child
-        max_failure = 5
+        considered_history = 999 #only consider the past 20 child
+        max_failure = 999
         inits = self.goal_condition
         if failed:
             failed = self.goal_condition.pop()

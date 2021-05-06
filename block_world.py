@@ -19,7 +19,7 @@ if __name__ == "__main__":
     pl = proposition_lookup
     #bA, bB, bC, bD, bE, bF, bG, bH, bI, bJ = \
         #Block("A"), Block("B"), Block("C"), Block("D"), Block("E"), Block("F"), Block("G"), Block("H"), Block("I"),  Block("J")
-    Blocks = ("A", "B", "C", "D" ,"E", "F", "G", "H", "I", "J")
+    Blocks = range(7)
     create_proposition("on", [Blocks, Blocks], [lambda arg1, arg2: arg1 != arg2])
     create_proposition("on-table", [Blocks])
     create_proposition("holding", [Blocks])
@@ -53,7 +53,7 @@ if __name__ == "__main__":
                      get_on], [lambda arg1, arg2: arg1 != arg2])
 
     create_action("unstack", [Blocks, Blocks], [get_on,
-                                              get_empty,
+                                               get_empty,
                                                 Select(get_clear, 0) ]
                   , [Select(get_holding, 0),
                      Select(get_clear, 1),
@@ -61,40 +61,26 @@ if __name__ == "__main__":
                      Fnot(get_empty),
                      Fnot(get_on)], [lambda arg1, arg2: arg1 != arg2])
 
-    init = [pl("clear", "C"),
-            pl("clear", "F"),
-            pl("on-table", "I"),
-            pl("on-table", "F"),
-            pl("on", ["C", "E"]),
-            pl("on", ["E", "J"]),
-            pl("on", ["J", "B"]),
-            pl("on", ["B", "G"]),
-            pl("on", ["G", "H"]),
-            pl("on", ["H", "A"]),
-            pl("on", ["A", "D"]),
-            pl("on", ["D", "I"]),
+    init = [pl("clear", [0]),
+            pl("clear", [6]),
+            pl("on-table", [4]),
+            pl("on-table", [5]),
+            pl("on", [0, 1]),
+            pl("on", [1, 2]),
+            pl("on", [2, 3]),
+            pl("on", [3, 4]),
+            pl("on", [6, 5]),
             proposition_lookup("empty", [])]
 
 
 
-    goal = [proposition_lookup("on", ["D", "C"]),
-            proposition_lookup("on", ["C", "F"]),
-            proposition_lookup("on", ["F", "J"]),
-            proposition_lookup("on", ["J", "E"]),
-            proposition_lookup("on", ["E", "H"]),
-            proposition_lookup("on", ["H", "B"]),
-            proposition_lookup("on", ["B", "A"]),
-            proposition_lookup("on", ["A", "G"]),
-            proposition_lookup("on", ["G", "I"]),
-            reverse(proposition_lookup("on-table", ["D"])),
-            reverse(proposition_lookup("on-table", ["C"])),
-            reverse(proposition_lookup("on-table", ["F"])),
-            reverse(proposition_lookup("on-table", ["J"])),
-            reverse(proposition_lookup("on-table", ["E"])),
-            reverse(proposition_lookup("on-table", ["H"])),
-            reverse(proposition_lookup("on-table", ["B"])),
-            reverse(proposition_lookup("on-table", ["A"])),
-            reverse(proposition_lookup("on-table", ["G"]))]
+    goal = [proposition_lookup("on", [6, 5]),
+            proposition_lookup("on", [5, 4]),
+            proposition_lookup("on", [4, 3]),
+            proposition_lookup("on", [3, 2]),
+            proposition_lookup("on", [2, 1]),
+            proposition_lookup("on", [1, 0])
+            ]
 
     mutexes = []
     for b1 in Blocks:
@@ -103,7 +89,7 @@ if __name__ == "__main__":
             prop = pl("on", [b1, b2])
             if prop is not None:
                 l_mutex.append(prop)
-        l_mutex.append(pl("on-table", b1))
+        l_mutex.append(pl("on-table", [b1]))
 
         mutexes.append(l_mutex)
 
@@ -113,7 +99,7 @@ if __name__ == "__main__":
             prop = pl("on", [b1, b2])
             if prop is not None:
                 l_mutex.append(prop)
-        l_mutex.append(pl("clear", b2))
+        l_mutex.append(pl("clear", [b2]))
 
         mutexes.append(l_mutex)
 
