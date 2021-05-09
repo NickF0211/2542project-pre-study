@@ -111,7 +111,7 @@ if __name__ == "__main__":
 
     inv = [Or([pl("on-table", [b]).get_base_var() for b in Blocks])]
 
-    solver = solver(3, init, goal, mutexes=mutexes, split=1, user_inv=inv)
+    solver = solver(3, init, goal, split=1)
     #solver.interpolantion_solving_union()
     start = time.time()
     solver.interpolantion_solving_union()
