@@ -434,6 +434,75 @@ def find_monotone():
 def single_impacted(prop):
     return len(prop_impacted.get(prop, [])) == 1
 
+def is_enabled(final_goal, assumption, action, target, bound = 10, may_exists=[]):
+    '''
+    for eff in action.effects:
+        if reverse(eff) in assumption:
+            return False
+    '''
+    implied = []
+    exists_learned = []
+    if reverse(final_goal) in action.effects:
+        return False, implied
+
+    for prop in action.precondition:
+        if reverse(prop) in assumption:
+            return False, implied
+        else:
+            if bound == 0:
+                exists_learned.append(prop)
+                continue
+            if not can_active(final_goal, assumption+[reverse(target)], prop, bound= bound-1, may_exists=may_exists + exists_learned):
+                implied.append(reverse(prop))
+                return False, implied
+
+    return True, implied
+
+
+def can_active(final_goal, assumptions, target, bound = 10, may_exists =[]):
+    if target in assumptions:
+        return True
+    if target in may_exists:
+        return True
+    if reverse(target) in assumptions:
+        return False
+    #the is to see if we could obtain target when the assumption holds
+    enabling_action = prop_impacted.get(target, [])
+    enabled = False
+    accunmlated = []
+    for act in enabling_action:
+        #check the act is enabled
+        unit_enabled, learned = is_enabled(final_goal, assumptions + accunmlated, act, target, bound=bound, may_exists=may_exists)
+        if (unit_enabled):
+            enabled = True
+            break
+        else:
+            accunmlated += learned
+
+    return enabled
+
+
+def rec_check_inv():
+    g_dict = dict()
+    a_dict = dict()
+    for act in get_all_acts():
+        precondition = act.precondition
+        effects = act.effects
+        for p in precondition:
+            if reverse(p) in effects:
+                for other_e in effects:
+                    if other_e != reverse(p):
+                        implied = g_dict.get(p, [])
+                        may_co_exists = a_dict.get(p, [])
+                        if not can_active(p, [p] + implied, other_e, 10, may_co_exists):
+                            g_dict[p] = implied+[reverse(other_e)]
+                        else:
+                            a_dict[p] = may_co_exists + [other_e]
+
+    return g_dict
+
+
+
 
 def analyzing_conflicting_actions():
     all_act = get_all_acts()
@@ -468,8 +537,8 @@ def analyzing_conflicting_actions():
 
 
 
-def build_action_inv():
-    shared_effects = []
+def build_action_inv(shared_effects = dict()):
+    #shared_effects = []
     for prop, actions in prop_impacted.items():
         common_effect = None
         for action in actions:
@@ -493,7 +562,7 @@ def build_action_inv():
                 filter_common_act.append(se)
 
         if filter_common_act != []:
-            shared_effects.append((prop, filter_common_act))
+            shared_effects[prop] = filter_common_act
     return shared_effects
 
 

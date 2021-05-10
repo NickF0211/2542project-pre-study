@@ -25,8 +25,8 @@ class solver():
         m_constraints = monotone_constraint(self.depth)
 
         #analyzing_conflicting_actions()
-        build_action_inv()
-
+        #build_action_inv()
+        #rec_check_inv()
         #TODO optimize it with subs
         self.p1 = action_frames[:split] + exp[:split] + exclusive_constraints[:split] + m_constraints[:split]
         self.pn = action_frames[split:] + exp[split:] + exclusive_constraints[split:]+ m_constraints[split:]
